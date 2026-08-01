@@ -52,7 +52,10 @@ router.delete('/api-keys/:id', async (req, res) => {
 // omniroute container; it can only report reachability) ---
 router.get('/omniroute-status', async (_req, res) => {
   try {
-    const r = await fetch(`${config.omnirouteUrl}/models`, { signal: AbortSignal.timeout(3000) });
+    const r = await fetch(`${config.omnirouteUrl}/models`, {
+      signal: AbortSignal.timeout(3000),
+      headers: config.omnirouteApiKey ? { Authorization: `Bearer ${config.omnirouteApiKey}` } : {},
+    });
     res.json({ reachable: r.ok, status: r.status });
   } catch (err) {
     res.json({ reachable: false, error: String(err) });

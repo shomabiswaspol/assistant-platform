@@ -12,7 +12,17 @@ export const config = {
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || '',
   encryptionKey: process.env.ENCRYPTION_KEY || '',
   omnirouteUrl: process.env.OMNIROUTE_URL || 'http://omniroute:20128/v1',
-  fazleReaderUrl: process.env.FAZLE_AI_READER_DB_URL || '',
+  omnirouteApiKey: process.env.OMNIROUTE_API_KEY || '',
+  fazleDb: {
+    enabled: process.env.FAZLE_DB_ENABLED === 'true',
+    host: process.env.FAZLE_DB_HOST || 'host.docker.internal',
+    port: parseInt(process.env.FAZLE_DB_PORT || '5432', 10),
+    name: process.env.FAZLE_DB_NAME || 'postgres',
+    user: process.env.FAZLE_DB_USER || 'fazle_ai_reader',
+    password: process.env.FAZLE_DB_PASSWORD || '',
+    maxPool: parseInt(process.env.FAZLE_DB_MAX_POOL || '3', 10),
+    statementTimeoutMs: parseInt(process.env.FAZLE_DB_STATEMENT_TIMEOUT || '5000', 10),
+  },
   smtpHost: process.env.SMTP_HOST || '',
   admin: {
     email: process.env.ADMIN_EMAIL || '',

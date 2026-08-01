@@ -55,7 +55,10 @@ router.post('/send', async (req, res) => {
   try {
     upstream = await fetch(`${config.omnirouteUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(config.omnirouteApiKey ? { Authorization: `Bearer ${config.omnirouteApiKey}` } : {}),
+      },
       body: JSON.stringify({
         model: model || 'auto',
         messages: [{ role: 'user', content: message }],

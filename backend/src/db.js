@@ -5,18 +5,35 @@ import { config } from './config.js';
 export const pool = new pg.Pool(config.db);
 
 // Read-only pool against fazle-core's existing fazle_ai_reader role.
-// Not created until first use, and only if FAZLE_AI_READER_DB_URL is set —
-// this app must keep working even before that credential is configured.
+// Separate from the app's own `pool` above on purpose — never shares a
+// connection, never shares credentials. Not created until first use, and
+// only if FAZLE_DB_ENABLED=true — this app must keep working normally even
+// before that credential is configured (graceful degradation).
 let fazleReaderPool = null;
 
+export function fazleBridgeEnabled() {
+  return config.fazleDb.enabled && !!config.fazleDb.password;
+}
+
 export function getFazleReaderPool() {
-  if (!config.fazleReaderUrl) return null;
+  if (!fazleBridgeEnabled()) return null;
   if (!fazleReaderPool) {
     fazleReaderPool = new pg.Pool({
-      connectionString: config.fazleReaderUrl,
-      max: 3,
+      host: config.fazleDb.host,
+      port: config.fazleDb.port,
+      database: config.fazleDb.name,
+      user: config.fazleDb.user,
+      password: config.fazleDb.password,
+      max: config.fazleDb.maxPool,
       idleTimeoutMillis: 30000,
-      statement_timeout: 8000,
+      connectionTimeoutMillis: 5000,
+      statement_timeout: config.fazleDb.statementTimeoutMs,
+    });
+    // Every new physical connection in the pool is forced read-only at the
+    // session level, in addition to the role's own SELECT-only grants and
+    // the query-text guard in fazleBridge.js — three independent layers.
+    fazleReaderPool.on('connect', (client) => {
+      client.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY').catch(() => {});
     });
   }
   return fazleReaderPool;

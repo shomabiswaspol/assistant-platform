@@ -19,7 +19,7 @@ services:
     networks:
       - assistant-net
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:20128/v1/models').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:20128/api/monitoring/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -51,6 +51,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - assistant-net
+      - db-network
     depends_on:
       assistant-db:
         condition: service_healthy
@@ -103,6 +104,13 @@ services:
 networks:
   assistant-net:
     name: assistant-network
+  # Pre-existing network ai-postgres already runs on — joined ONLY by
+  # assistant-backend, read-only purpose (fazle_ai_reader bridge). Declared
+  # `external` so compose attaches to it rather than trying to create or
+  # modify it; ai-postgres and every other container on it are untouched.
+  db-network:
+    name: db-network
+    external: true
 
 volumes:
   omniroute-data:

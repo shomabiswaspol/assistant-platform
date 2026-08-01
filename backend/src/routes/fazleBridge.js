@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getFazleReaderPool } from '../db.js';
+import { getFazleReaderPool, fazleBridgeEnabled } from '../db.js';
 import { requireAuth, requireApproved } from '../middleware/auth.js';
 
 const router = Router();
@@ -10,24 +10,61 @@ router.use(requireAuth, requireApproved);
 // Deliberately restricted to the same ai_read_* views fazle-core itself
 // exposes to its AI console — no raw production tables, no writes, ever.
 // fazle-core was not modified in any way to support this.
+//
+// Three independent layers keep this read-only, in case any one fails:
+//   1. The fazle_ai_reader Postgres role only has SELECT grants (audited
+//      2026-08-02: exactly 10 ai_read_* views, no raw tables, no writes).
+//   2. Every pooled connection issues `SET SESSION CHARACTERISTICS AS
+//      TRANSACTION READ ONLY` on connect (see db.js).
+//   3. The query-text guard below rejects anything that isn't a plain
+//      SELECT before it's ever sent to Postgres.
+//
+// Only a small, named set of query functions is exposed here — never a
+// generic "run arbitrary SQL" endpoint.
+
+const FORBIDDEN_SQL = /\b(insert|update|delete|drop|truncate|alter|create|grant|revoke|copy)\b/i;
 
 async function readOnlyQuery(res, sql, params = []) {
+  if (FORBIDDEN_SQL.test(sql)) {
+    // Should be unreachable — every query below is a hardcoded literal —
+    // this is defense-in-depth, not something callers can trigger.
+    return res.status(500).json({ error: 'fazleBridge: write operations are forbidden' });
+  }
   const pool = getFazleReaderPool();
   if (!pool) {
     return res.status(503).json({
       error: 'fazle-core bridge not configured',
-      hint: 'set FAZLE_AI_READER_DB_URL in backend/.env — see backend/.env.example',
+      hint: 'set FAZLE_DB_PASSWORD and FAZLE_DB_ENABLED=true in backend/.env — see backend/.env.example',
     });
   }
   try {
     const { rows } = await pool.query(sql, params);
     return res.json(rows);
   } catch (err) {
+    // Never include err (may carry connection details) in the response or
+    // in a log line that could reach a report/commit — message text only,
+    // and only server-side stdout, never persisted by this app.
     // eslint-disable-next-line no-console
     console.error('fazleBridge query error:', err.message);
     return res.status(502).json({ error: 'fazle-core bridge query failed' });
   }
 }
+
+router.get('/status', async (_req, res) => {
+  if (!fazleBridgeEnabled()) {
+    return res.json({ enabled: false, connected: false, readonly: true });
+  }
+  const pool = getFazleReaderPool();
+  const start = Date.now();
+  try {
+    await pool.query('SELECT 1');
+    return res.json({ enabled: true, connected: true, readonly: true, latencyMs: Date.now() - start });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('fazleBridge status check failed:', err.message);
+    return res.json({ enabled: true, connected: false, readonly: true });
+  }
+});
 
 router.get('/contacts', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
@@ -69,6 +106,58 @@ router.get('/kb', (req, res) => {
   return readOnlyQuery(
     res,
     'SELECT id, key, category, subcategory, content_preview FROM ai_read_kb_articles LIMIT $1',
+    [limit]
+  );
+});
+
+router.get('/attendance', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
+  return readOnlyQuery(
+    res,
+    'SELECT employee_name, designation, attendance_date, status, location, remarks FROM ai_read_attendance_summary ORDER BY attendance_date DESC LIMIT $1',
+    [limit]
+  );
+});
+
+router.get('/billing-outstanding', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
+  return readOnlyQuery(res, 'SELECT * FROM ai_read_billing_outstanding LIMIT $1', [limit]);
+});
+
+router.get('/escort-programs', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
+  return readOnlyQuery(
+    res,
+    `SELECT program_id, mother_vessel, lighter_vessel, destination, program_date, shift, status,
+            escort_name, escort_mobile, assignment_time, completion_time
+       FROM ai_read_escort_programs ORDER BY program_date DESC LIMIT $1`,
+    [limit]
+  );
+});
+
+router.get('/module-bridge-status', (_req, res) => {
+  return readOnlyQuery(
+    res,
+    'SELECT service_name, status, last_seen, metadata FROM ai_read_module_bridge_status LIMIT 20'
+  );
+});
+
+router.get('/payroll-runs', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  return readOnlyQuery(
+    res,
+    `SELECT employee_name, designation, period_year, period_month, status,
+            total_programs, gross_salary, net_salary, total_advances, total_deductions
+       FROM ai_read_payroll_runs ORDER BY period_year DESC, period_month DESC LIMIT $1`,
+    [limit]
+  );
+});
+
+router.get('/recruitment-leads', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  return readOnlyQuery(
+    res,
+    'SELECT id, phone, funnel_stage, source, full_name, area, score_bucket, created_at FROM ai_read_recruitment_leads LIMIT $1',
     [limit]
   );
 });
