@@ -24,6 +24,7 @@ const apiLimiter = rateLimit({ windowMs: 60_000, max: 120 });
 app.use('/api/', apiLimiter);
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'assistant-backend' }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'assistant-backend' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
