@@ -1,0 +1,57 @@
+# OmniRoute configuration — NOT active until the omniroute container is
+# started (see docker-compose.yml comment + deployment report).
+# Priority: Free Cloud -> Local (Ollama) -> Paid Cloud
+
+server:
+  port: 20128
+  host: 0.0.0.0
+
+providers:
+  groq:
+    type: openai-compatible
+    baseUrl: https://api.groq.com/openai/v1
+    apiKey: ${GROQ_API_KEY}
+    models:
+      - llama-3.3-70b-versatile
+      - llama-3.1-8b-instant
+      - whisper-large-v3-turbo
+    priority: 1
+
+  google:
+    type: google-ai
+    apiKey: ${GOOGLE_AI_KEY}
+    models:
+      - gemini-2.0-flash
+    priority: 1
+
+  ollama:
+    type: ollama
+    baseUrl: http://host.docker.internal:11434
+    models:
+      - phi4-mini
+      - qwen3:8b
+    priority: 2
+
+  moonshot:
+    type: openai-compatible
+    baseUrl: https://api.moonshot.cn/v1
+    apiKey: ${MOONSHOT_API_KEY}
+    models:
+      - kimi-k3
+    priority: 3
+
+  deepseek:
+    type: openai-compatible
+    baseUrl: https://api.deepseek.com/v1
+    apiKey: ${DEEPSEEK_API_KEY}
+    models:
+      - deepseek-chat
+      - deepseek-coder
+    priority: 3
+
+routing:
+  default: auto
+  fallback:
+    maxRetries: 3
+    retryDelay: 1000
+    strategy: priority-cascade

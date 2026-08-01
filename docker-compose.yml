@@ -1,0 +1,110 @@
+services:
+  # === AI GATEWAY — defined but NOT started by default. ===
+  # See the deployment report: this pulls a third-party image
+  # (ghcr.io/diegosouzapw/omniroute) that will hold every provider API key
+  # you configure. Start explicitly with:
+  #   docker compose up -d omniroute
+  # only after you've reviewed it.
+  omniroute:
+    image: ghcr.io/diegosouzapw/omniroute:latest
+    container_name: assistant-omniroute
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:20128:20128"
+    volumes:
+      - ./omniroute/config.yml:/app/config.yml:ro
+      - omniroute-data:/app/data
+    env_file:
+      - ./omniroute/.env
+    networks:
+      - assistant-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:20128/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  assistant-backend:
+    build: ./backend
+    container_name: assistant-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    env_file:
+      - ./backend/.env
+    environment:
+      - PORT=3001
+      - DB_HOST=assistant-db
+      - DB_PORT=5432
+      - DB_NAME=assistant
+      - DB_USER=assistant
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_URL=redis://assistant-redis:6379
+      - OMNIROUTE_URL=http://omniroute:20128/v1
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - assistant-net
+    depends_on:
+      assistant-db:
+        condition: service_healthy
+      assistant-redis:
+        condition: service_healthy
+
+  assistant-frontend:
+    build: ./frontend
+    container_name: assistant-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"
+    networks:
+      - assistant-net
+    depends_on:
+      - assistant-backend
+
+  assistant-db:
+    image: postgres:15-alpine
+    container_name: assistant-db
+    restart: unless-stopped
+    volumes:
+      - assistant-db-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=assistant
+      - POSTGRES_USER=assistant
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    networks:
+      - assistant-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  assistant-redis:
+    image: redis:8-alpine
+    container_name: assistant-redis
+    restart: unless-stopped
+    volumes:
+      - assistant-redis-data:/data
+    networks:
+      - assistant-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  assistant-net:
+    name: assistant-network
+
+volumes:
+  omniroute-data:
+  assistant-db-data:
+  assistant-redis-data:
