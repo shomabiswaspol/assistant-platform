@@ -19,7 +19,7 @@ services:
     networks:
       - assistant-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:20128/v1/models"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:20128/v1/models').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
