@@ -13,6 +13,17 @@ export const config = {
   encryptionKey: process.env.ENCRYPTION_KEY || '',
   omnirouteUrl: process.env.OMNIROUTE_URL || 'http://omniroute:20128/v1',
   omnirouteApiKey: process.env.OMNIROUTE_API_KEY || '',
+  // opencode serve runs on the HOST (systemd user service, not Docker) —
+  // this container reaches it via host.docker.internal, same mechanism
+  // already used for fazle-core's Postgres (extra_hosts in docker-compose.yml).
+  opencodeUrl: process.env.OPENCODE_URL || 'http://host.docker.internal:8091',
+  // hermes-runner.service (host-level, invokes the real `hermes` CLI with
+  // real terminal/file/code_execution access) — same nginx-proxy pattern
+  // as opencodeUrl, and for the same reason (a direct bridge-gateway route
+  // from this container to a 127.0.0.1-bound host service was found to be
+  // silently dropped by the kernel on this VPS).
+  hermesRunnerUrl: process.env.HERMES_RUNNER_URL || 'http://172.25.0.1:80/hermes-internal',
+  hermesRunnerSecret: process.env.HERMES_RUNNER_SECRET || '',
   fazleDb: {
     enabled: process.env.FAZLE_DB_ENABLED === 'true',
     host: process.env.FAZLE_DB_HOST || 'host.docker.internal',

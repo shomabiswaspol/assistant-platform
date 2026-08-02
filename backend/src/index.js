@@ -14,6 +14,8 @@ import settingsRoutes from './routes/settings.js';
 import usageRoutes from './routes/usage.js';
 import fazleBridgeRoutes from './routes/fazleBridge.js';
 import chatRoutes from './routes/chat.js';
+import opencodeRoutes from './routes/opencode.js';
+import hermesRoutes from './routes/hermes.js';
 
 const app = express();
 // nginx reverse-proxies every request to this container (see
@@ -38,6 +40,8 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/usage', usageRoutes);
 app.use('/api/fazle', fazleBridgeRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/opencode', opencodeRoutes);
+app.use('/api/hermes', hermesRoutes);
 
 app.use((err, _req, res, _next) => {
   // eslint-disable-next-line no-console

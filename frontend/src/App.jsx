@@ -11,6 +11,7 @@ import RegisterPage from './pages/RegisterPage.jsx';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
 import ChatPage from './pages/ChatPage.jsx';
 import OpenCodePage from './pages/OpenCodePage.jsx';
+import HermesPage from './pages/HermesPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import UsagePage from './pages/UsagePage.jsx';
@@ -75,6 +76,7 @@ export default function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
             <Route path="/opencode" element={<RequireAuth><OpenCodePage /></RequireAuth>} />
+            <Route path="/hermes" element={<RequireAuth><HermesPage /></RequireAuth>} />
             <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
             <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
             <Route path="/usage" element={<RequireAuth><UsagePage /></RequireAuth>} />

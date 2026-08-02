@@ -70,4 +70,14 @@ export const api = {
 
   usageDaily: () => request('/usage/daily'),
   usageMonthly: () => request('/usage/monthly'),
+
+  opencodeSessions: () => request('/opencode/session'),
+  opencodeCreateSession: () => request('/opencode/session', { method: 'POST' }),
+  opencodeMessages: (sessionId) => request(`/opencode/session/${sessionId}/messages`),
+  opencodePrompt: (sessionId, text) =>
+    request(`/opencode/session/${sessionId}/prompt`, { method: 'POST', body: { text } }),
+
+  hermesMessages: () => request('/hermes/messages'),
+  hermesSend: (message) => request('/hermes/send', { method: 'POST', body: { message } }),
+  hermesReset: () => request('/hermes/reset', { method: 'POST' }),
 };

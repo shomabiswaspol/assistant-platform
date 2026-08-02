@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Code2, BarChart3, Settings, User, ShieldCheck, Plus, MessageSquare, X } from 'lucide-react';
+import { Code2, BarChart3, Settings, User, ShieldCheck, Plus, MessageSquare, X, Bot } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useChatSessions } from '../../context/ChatSessionsContext.jsx';
@@ -12,6 +12,10 @@ import UserMenu from './UserMenu.jsx';
 // SessionSidebar.jsx has been removed.
 
 const WORKSPACE_ITEMS = [{ to: '/opencode', label: 'OpenCode', icon: Code2 }];
+// Hermes: full-capability agent (real terminal/file/code_execution access
+// via hermes-runner.service) — admin-only, appended conditionally in
+// Sidebar() below, not part of the static list everyone sees.
+const HERMES_ITEM = { to: '/hermes', label: 'Hermes', icon: Bot };
 
 const ACCOUNT_ITEMS = [
   { to: '/usage', label: 'Usage', icon: BarChart3 },
@@ -121,7 +125,10 @@ export default function Sidebar({ open = true, mobileOpen = false, onCloseMobile
       </div>
       <ChatHistorySection onNavigateAway={onCloseMobile} />
       <nav className="px-3 py-3 flex flex-col gap-4 border-t border-slate-200 dark:border-slate-800 shrink-0">
-        <NavGroup title="Workspace" items={WORKSPACE_ITEMS} />
+        <NavGroup
+          title="Workspace"
+          items={user?.role === 'admin' ? [...WORKSPACE_ITEMS, HERMES_ITEM] : WORKSPACE_ITEMS}
+        />
         <NavGroup title="Account" items={ACCOUNT_ITEMS} />
         {user?.role === 'admin' && <NavGroup title="Admin" items={[{ to: '/admin', label: 'Admin', icon: ShieldCheck }]} />}
       </nav>
