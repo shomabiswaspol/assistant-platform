@@ -20,6 +20,16 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   return data;
 }
 
+async function requestForm(path, formData) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: formData });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `request failed (${res.status})`);
+  return data;
+}
+
 export const api = {
   register: (payload) => request('/auth/register', { method: 'POST', body: payload, auth: false }),
   login: (payload) => request('/auth/login', { method: 'POST', body: payload, auth: false }),
@@ -29,11 +39,25 @@ export const api = {
   chatSessions: () => request('/chat/sessions'),
   chatMessages: (sessionId) => request(`/chat/sessions/${sessionId}/messages`),
   chatSend: (payload) => request('/chat/send', { method: 'POST', body: payload }),
+  chatSendAudio: (blob, sessionId) => {
+    const form = new FormData();
+    form.append('audio', blob, 'voice.webm');
+    if (sessionId) form.append('session_id', sessionId);
+    return requestForm('/chat/send-audio', form);
+  },
+  chatSendImage: (file, sessionId, message) => {
+    const form = new FormData();
+    form.append('image', file);
+    if (sessionId) form.append('session_id', sessionId);
+    if (message) form.append('message', message);
+    return requestForm('/chat/send-image', form);
+  },
 
   adminRequests: (status = 'pending') => request(`/admin/membership-requests?status=${status}`),
   adminDecide: (id, decision, note) =>
     request(`/admin/membership-requests/${id}/decide`, { method: 'POST', body: { decision, note } }),
   adminUsers: () => request('/admin/users'),
+  adminSetUserStatus: (id, status) => request(`/admin/users/${id}/status`, { method: 'POST', body: { status } }),
 
   profile: () => request('/profile'),
   updateProfile: (payload) => request('/profile', { method: 'PATCH', body: payload }),
