@@ -151,7 +151,7 @@ export const fazleToolDefinitions = [
     type: 'function',
     function: {
       name: 'get_module_bridge_status',
-      description: 'Check the health/status of fazle-core\'s internal service modules.',
+      description: "Check fazle-core's internal service heartbeats — when each service was last seen and its current queue depth (no explicit status field exists; recency of last_seen and queue_depth are the health signals).",
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -310,8 +310,16 @@ export async function executeFazleTool(toolName, args = {}) {
       }
 
       case 'get_module_bridge_status': {
+        // ai_read_module_bridge_status has no "status" column — verified
+        // 2026-08-02 via `\d+ ai_read_module_bridge_status` against the real
+        // fazle_ai_reader-visible view: it's service_name, last_seen,
+        // queue_depth, metadata (view maps service->service_name,
+        // meta_json->metadata off fazle_service_heartbeats). This was a
+        // pre-existing bug shared with fazleBridge.js's own /module-bridge-
+        // status route, which still references the non-existent column —
+        // fazleBridge.js is out of scope here and is left as-is.
         const { rows, error } = await runQuery(
-          'SELECT service_name, status, last_seen, metadata FROM ai_read_module_bridge_status LIMIT 20'
+          'SELECT service_name, last_seen, queue_depth, metadata FROM ai_read_module_bridge_status LIMIT 20'
         );
         return error ? { error } : rows;
       }

@@ -16,6 +16,11 @@ import fazleBridgeRoutes from './routes/fazleBridge.js';
 import chatRoutes from './routes/chat.js';
 
 const app = express();
+// nginx reverse-proxies every request to this container (see
+// /etc/nginx/sites-available/assistant.iamazim.com) — trust exactly that one
+// proxy hop so express-rate-limit can read X-Forwarded-For correctly instead
+// of throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on every request.
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));

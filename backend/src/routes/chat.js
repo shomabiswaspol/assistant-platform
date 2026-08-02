@@ -48,6 +48,16 @@ function estimateTokens(text) {
 // --- Tool-calling: fazle DB tools + web search, combined for the model ---
 const allTools = [...fazleToolDefinitions, ...searchToolDefinitions];
 
+// Pin to a model confirmed to handle tool_calls correctly.
+// OmniRoute auto may route to models that leak raw tool syntax.
+// groq/llama-3.3-70b-versatile verified working in live testing (2026-08-02:
+// OmniRoute's `auto` router landed on a model that, on a tool-call error,
+// emitted raw pseudo-tool-call text straight into the visible reply instead
+// of a proper follow-up answer; the same query with this model pinned came
+// back clean). Only used for tool-enabled calls — the no-tools fallback
+// path below still uses whatever model the user picked (or `auto`).
+const TOOL_CAPABLE_MODEL = 'groq/llama-3.3-70b-versatile';
+
 // Routes a single tool_call from the model to the right executor and always
 // resolves — a tool failure must never crash the surrounding chat request.
 async function executeToolCall(toolCall) {
@@ -118,14 +128,15 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata }) 
 
   // --- Tool-calling: give the model fazle-DB + web-search tools ---
   const messages = [{ role: 'user', content: message }];
-  let upstream = await callOmniRoute(messages, { model, includeTools: true });
+  let upstream = await callOmniRoute(messages, { model: TOOL_CAPABLE_MODEL, includeTools: true });
 
   if (!upstream.ok) {
     // Some providers/models (e.g. certain Ollama models routed through
     // OmniRoute) reject an unrecognized `tools`/`tool_choice` field outright
-    // instead of ignoring it. Retry once without tools before treating this
-    // as a hard failure, so tool-calling never breaks chat for a model that
-    // simply doesn't support it.
+    // instead of ignoring it. Retry once without tools — and without the
+    // TOOL_CAPABLE_MODEL pin, since the pin only exists to make tool-calling
+    // behave; a plain completion should still go through the user's chosen
+    // model (or OmniRoute's own auto-routing) as before.
     // eslint-disable-next-line no-console
     console.warn('chat: tool-enabled completion failed, retrying without tools (status', upstream.status, ')');
     upstream = await callOmniRoute(messages, { model, includeTools: false });
@@ -156,7 +167,10 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata }) 
       });
     }
 
-    const followUp = await callOmniRoute(messages, { model, includeTools: false });
+    // Same pinned model as the initial tool-enabled call, for consistency —
+    // it already proved it can handle a tool_calls turn cleanly, and this
+    // follow-up is the other half of that same turn.
+    const followUp = await callOmniRoute(messages, { model: TOOL_CAPABLE_MODEL, includeTools: false });
     if (!followUp.ok) {
       const text = await followUp.text().catch(() => '');
       const err = new Error('AI gateway error');
