@@ -51,14 +51,19 @@ router.delete('/api-keys/:id', async (req, res) => {
 // backend does not have host-level permission to control the sibling
 // omniroute container; it can only report reachability) ---
 router.get('/omniroute-status', async (_req, res) => {
+  // tavilyConfigured: boolean presence check only, never the key value —
+  // same pattern as fazleBridgeEnabled() in db.js. Piggybacked on this
+  // existing status endpoint (already polled by SettingsPage) rather than
+  // adding a new route for one boolean.
+  const tavilyConfigured = !!process.env.TAVILY_API_KEY;
   try {
     const r = await fetch(`${config.omnirouteUrl}/models`, {
       signal: AbortSignal.timeout(3000),
       headers: config.omnirouteApiKey ? { Authorization: `Bearer ${config.omnirouteApiKey}` } : {},
     });
-    res.json({ reachable: r.ok, status: r.status });
+    res.json({ reachable: r.ok, status: r.status, tavilyConfigured });
   } catch (err) {
-    res.json({ reachable: false, error: String(err) });
+    res.json({ reachable: false, error: String(err), tavilyConfigured });
   }
 });
 

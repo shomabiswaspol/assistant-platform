@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 
-export default function Input({ label, error, className, ...props }) {
+export default function Input({ label, hint, error, className, ...props }) {
   return (
     <label className="block">
       {label && <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>}
@@ -14,6 +14,10 @@ export default function Input({ label, error, className, ...props }) {
         )}
         {...props}
       />
+      {/* hint: small helper text under a field, e.g. explaining what an
+          optional "label" tag is for — distinct from `error`, which only
+          shows on validation failure. */}
+      {hint && !error && <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">{hint}</span>}
       {error && <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{error}</span>}
     </label>
   );

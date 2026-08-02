@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import { ThemeEffect } from './context/ThemeContext.jsx';
+import { ChatSessionsProvider } from './context/ChatSessionsContext.jsx';
 import Sidebar from './components/layout/Sidebar.jsx';
 import MobileNav from './components/layout/MobileNav.jsx';
 import LoginPage from './pages/LoginPage.jsx';
@@ -19,17 +22,44 @@ function RequireAuth({ children }) {
   return children;
 }
 
+// FIX 2: sidebar open/collapse state lives here — one level above the
+// sidebar itself — so the toggle button stays reachable even when the
+// sidebar is collapsed on desktop or closed on mobile.
 function Layout({ children }) {
   const { user } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   if (!user) return children;
   return (
-    <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-950">
-      <Sidebar />
-      <div className="flex flex-1 flex-col min-w-0">
-        <main className="flex-1 overflow-y-auto">{children}</main>
-        <MobileNav />
+    <ChatSessionsProvider>
+      <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-950">
+        <Sidebar
+          open={sidebarOpen}
+          mobileOpen={mobileSidebarOpen}
+          onCloseMobile={() => setMobileSidebarOpen(false)}
+        />
+        <div className="flex flex-1 flex-col min-w-0">
+          <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 px-2 py-2 shrink-0">
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="lg:hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              title="Open menu"
+            >
+              <Menu size={18} />
+            </button>
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="hidden lg:flex rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            >
+              {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+            </button>
+          </div>
+          <main className="flex-1 overflow-y-auto">{children}</main>
+          <MobileNav />
+        </div>
       </div>
-    </div>
+    </ChatSessionsProvider>
   );
 }
 

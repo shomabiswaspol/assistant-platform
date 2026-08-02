@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Sparkles, Menu, SquarePen } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Sparkles } from 'lucide-react';
 import { api } from '../services/api.js';
-import SessionSidebar from '../components/chat/SessionSidebar.jsx';
+import { useChatSessions } from '../context/ChatSessionsContext.jsx';
 import MessageBubble from '../components/chat/MessageBubble.jsx';
 import ChatInputBar from '../components/chat/ChatInputBar.jsx';
 
@@ -11,45 +11,51 @@ const SUGGESTIONS = [
   'Explain this codebase in simple terms',
 ];
 
+// FIX 1: session list + "New chat" now live in the single merged Sidebar
+// (App.jsx's Layout), driven by ChatSessionsContext — this page no longer
+// renders its own second sidebar, just the active conversation.
 export default function ChatPage() {
-  const [sessions, setSessions] = useState([]);
-  const [sessionId, setSessionId] = useState(null);
+  const { activeId: sessionId, setActiveId, reload } = useChatSessions();
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
   const bottomRef = useRef(null);
+  // Guards against re-fetching messages we already have locally right after
+  // sending (applyResult sets a brand-new sessionId from the response) —
+  // only fetch when the active session changed for some OTHER reason, e.g.
+  // the user picked a different past conversation from the sidebar.
+  const skipNextFetchRef = useRef(false);
 
-  const loadSessions = useCallback(async () => {
-    setSessions(await api.chatSessions());
-  }, []);
-
-  useEffect(() => { loadSessions(); }, [loadSessions]);
+  useEffect(() => {
+    if (!sessionId) {
+      setMessages([]);
+      return;
+    }
+    if (skipNextFetchRef.current) {
+      skipNextFetchRef.current = false;
+      return;
+    }
+    api.chatMessages(sessionId).then((msgs) => setMessages(msgs.map((m) => ({ ...m, createdAt: m.created_at }))));
+  }, [sessionId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending]);
 
-  async function selectSession(id) {
-    setSessionId(id);
-    const msgs = await api.chatMessages(id);
-    setMessages(msgs.map((m) => ({ ...m, createdAt: m.created_at })));
-  }
-
   function startNewChat() {
-    setSessionId(null);
-    setMessages([]);
+    setActiveId(null);
     setError('');
   }
 
   function applyResult(res, userMessage) {
-    setSessionId(res.session_id);
+    skipNextFetchRef.current = true;
+    setActiveId(res.session_id);
     setMessages((m) => [
       ...m,
       ...(userMessage ? [{ role: 'user', content: userMessage }] : []),
       { role: 'assistant', content: res.reply, provider: res.provider, model: res.model },
     ]);
-    loadSessions();
+    reload();
   }
 
   async function handleSend(text) {
@@ -95,37 +101,9 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-full">
-      <SessionSidebar
-        sessions={sessions}
-        activeId={sessionId}
-        onSelect={selectSession}
-        onNew={startNewChat}
-        mobileOpen={mobileSessionsOpen}
-        onCloseMobile={() => setMobileSessionsOpen(false)}
-      />
-      <div className="flex flex-1 flex-col min-w-0">
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-3 py-2 lg:hidden">
-          <button
-            onClick={() => setMobileSessionsOpen(true)}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-            title="Chat history"
-          >
-            <Menu size={18} />
-          </button>
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-            {sessions.find((s) => s.id === sessionId)?.title || 'New chat'}
-          </span>
-          <button
-            onClick={startNewChat}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-            title="New chat"
-          >
-            <SquarePen size={18} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-4">
+    <div className="flex h-full flex-col">
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl px-4">
             {messages.length === 0 ? (
               <div className="flex h-full min-h-[60vh] flex-col items-center justify-center text-center px-4">
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 dark:bg-brand-900/40">
@@ -167,9 +145,8 @@ export default function ChatPage() {
             <div ref={bottomRef} />
           </div>
         </div>
-        <div className="mx-auto w-full max-w-3xl">
-          <ChatInputBar onSend={handleSend} onSendImage={handleSendImage} onSendAudio={handleSendAudio} sending={sending} />
-        </div>
+      <div className="mx-auto w-full max-w-3xl">
+        <ChatInputBar onSend={handleSend} onSendImage={handleSendImage} onSendAudio={handleSendAudio} sending={sending} />
       </div>
     </div>
   );

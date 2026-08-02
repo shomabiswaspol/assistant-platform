@@ -22,11 +22,23 @@ export default function SettingsPage() {
   const [omni, setOmni] = useState(null);
   const [newKey, setNewKey] = useState({ provider: '', key: '', label: '' });
   const [showAddKey, setShowAddKey] = useState(false);
+  // FIX 3: refresh() previously had no error handling — if any of the three
+  // calls below failed (expired token, transient network issue), the page
+  // would silently stay half-loaded with no indication why. Route/imports
+  // themselves were already correct (verified: /settings route, Sidebar
+  // link, and this component's export are all fine) — this is a genuine
+  // resilience gap, not the reported "broken navigation."
+  const [loadError, setLoadError] = useState('');
 
   async function refresh() {
-    setModels(await api.models());
-    setKeys(await api.apiKeys());
-    setOmni(await api.omnirouteStatus());
+    try {
+      setLoadError('');
+      setModels(await api.models());
+      setKeys(await api.apiKeys());
+      setOmni(await api.omnirouteStatus());
+    } catch (err) {
+      setLoadError(err.message || 'Failed to load settings — please try refreshing the page.');
+    }
   }
 
   useEffect(() => { refresh(); }, []);
@@ -34,21 +46,35 @@ export default function SettingsPage() {
   async function addKey(e) {
     e.preventDefault();
     if (!newKey.provider || !newKey.key) return;
-    await api.addApiKey(newKey);
-    setNewKey({ provider: '', key: '', label: '' });
-    setShowAddKey(false);
-    refresh();
+    try {
+      await api.addApiKey(newKey);
+      setNewKey({ provider: '', key: '', label: '' });
+      setShowAddKey(false);
+      refresh();
+    } catch (err) {
+      setLoadError(err.message || 'Failed to save the key.');
+    }
   }
 
   async function removeKey(id) {
     if (!confirm('Remove this API key?')) return;
-    await api.deleteApiKey(id);
-    refresh();
+    try {
+      await api.deleteApiKey(id);
+      refresh();
+    } catch (err) {
+      setLoadError(err.message || 'Failed to remove the key.');
+    }
   }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 flex flex-col gap-6">
       <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Settings</h1>
+
+      {loadError && (
+        <div className="rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+          {loadError}
+        </div>
+      )}
 
       <Card>
         <CardHeader title="AI Gateway" subtitle="OmniRoute routes chat requests across free, local, and paid providers." />
@@ -56,6 +82,25 @@ export default function SettingsPage() {
         <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
           Start/stop is a host-level operation, not exposed here.
         </p>
+        {/* FIX 5: web search provider status. Reads a real boolean the
+            backend reports (tavilyConfigured on /settings/omniroute-status)
+            rather than a fake/static indicator — see settings.js. */}
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <span className="text-sm text-slate-600 dark:text-slate-400">Web Search (Tavily)</span>
+          {omni ? (
+            <span
+              className={
+                omni.tavilyConfigured
+                  ? 'text-xs font-medium text-green-700 dark:text-green-400'
+                  : 'text-xs font-medium text-slate-400 dark:text-slate-500'
+              }
+            >
+              {omni.tavilyConfigured ? 'Configured' : 'Not configured'}
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400">Checking…</span>
+          )}
+        </div>
       </Card>
 
       <Card>
@@ -107,11 +152,33 @@ export default function SettingsPage() {
             </div>
           ))}
         </div>
+        {/* FIX 4: the field was already correctly named/spelled "label" in
+            code (no "lebel" typo found anywhere in this project) — what it
+            genuinely lacked was required/optional marking and an
+            explanation of what the label is for. Added below. */}
         {showAddKey && (
-          <form onSubmit={addKey} className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
-            <Input placeholder="Provider (e.g. groq)" value={newKey.provider} onChange={(e) => setNewKey({ ...newKey, provider: e.target.value })} />
-            <Input placeholder="API key" value={newKey.key} onChange={(e) => setNewKey({ ...newKey, key: e.target.value })} />
-            <Input placeholder="Label (optional)" value={newKey.label} onChange={(e) => setNewKey({ ...newKey, label: e.target.value })} />
+          <form onSubmit={addKey} className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 items-start rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
+            <Input
+              label={<>Provider <span className="text-red-500">*</span></>}
+              placeholder="e.g. groq"
+              value={newKey.provider}
+              onChange={(e) => setNewKey({ ...newKey, provider: e.target.value })}
+              required
+            />
+            <Input
+              label={<>API key <span className="text-red-500">*</span></>}
+              placeholder="Paste your key"
+              value={newKey.key}
+              onChange={(e) => setNewKey({ ...newKey, key: e.target.value })}
+              required
+            />
+            <Input
+              label={<>Label <span className="text-slate-400 font-normal">(optional)</span></>}
+              placeholder="My Groq Key / Work API"
+              hint="Key name/tag — e.g. 'My Groq Key' or 'Work API' — এটি ঐচ্ছিক, শুধু নিজের সুবিধার জন্য একটি নাম দিন"
+              value={newKey.label}
+              onChange={(e) => setNewKey({ ...newKey, label: e.target.value })}
+            />
             <Button type="submit" size="sm" className="sm:col-span-3">Save key</Button>
           </form>
         )}
