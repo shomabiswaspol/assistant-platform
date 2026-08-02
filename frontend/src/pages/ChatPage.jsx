@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Menu, SquarePen } from 'lucide-react';
 import { api } from '../services/api.js';
 import SessionSidebar from '../components/chat/SessionSidebar.jsx';
 import MessageBubble from '../components/chat/MessageBubble.jsx';
@@ -17,6 +17,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
   const bottomRef = useRef(null);
 
   const loadSessions = useCallback(async () => {
@@ -95,8 +96,34 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full">
-      <SessionSidebar sessions={sessions} activeId={sessionId} onSelect={selectSession} onNew={startNewChat} />
+      <SessionSidebar
+        sessions={sessions}
+        activeId={sessionId}
+        onSelect={selectSession}
+        onNew={startNewChat}
+        mobileOpen={mobileSessionsOpen}
+        onCloseMobile={() => setMobileSessionsOpen(false)}
+      />
       <div className="flex flex-1 flex-col min-w-0">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-3 py-2 lg:hidden">
+          <button
+            onClick={() => setMobileSessionsOpen(true)}
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            title="Chat history"
+          >
+            <Menu size={18} />
+          </button>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            {sessions.find((s) => s.id === sessionId)?.title || 'New chat'}
+          </span>
+          <button
+            onClick={startNewChat}
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            title="New chat"
+          >
+            <SquarePen size={18} />
+          </button>
+        </div>
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-4">
             {messages.length === 0 ? (

@@ -49,7 +49,7 @@ export default function ProfilePage() {
       <Card>
         <CardHeader title="Account details" />
         <form onSubmit={save} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Username" value={profile.username} disabled />
             <Input label="Email" value={profile.email} disabled />
           </div>
@@ -58,7 +58,7 @@ export default function ProfilePage() {
             value={profile.whatsapp_number || ''}
             onChange={(e) => setProfile({ ...profile, whatsapp_number: e.target.value })}
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Language</span>
               <select
