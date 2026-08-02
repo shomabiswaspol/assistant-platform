@@ -128,17 +128,40 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata }) 
 
   // --- Tool-calling: give the model fazle-DB + web-search tools ---
   const messages = [{ role: 'user', content: message }];
-  let upstream = await callOmniRoute(messages, { model: TOOL_CAPABLE_MODEL, includeTools: true });
+
+  // Groq's Llama-3.3 tool-calling occasionally generates malformed
+  // function-call tokens on its own (confirmed live: a 400 "tool_use_failed"
+  // with a syntactically broken `<function=name [args]</function>` string in
+  // failed_generation) — generation-quality flakiness, not a structural
+  // incompatibility with tools. The old behavior (immediate fallback to
+  // no-tools/auto on the first failure) meant one bad generation silently
+  // killed tool use for the entire turn — observed live causing a fully
+  // ungrounded, hallucinating conversation (wrong dates, no DB lookups,
+  // invented table names), because it then landed on an unreliable
+  // auto-routed model with no tools at all. Also observed live: for a
+  // query with no matching tool at all, this can fail two attempts in a
+  // row, not just one — so retry up to TOOL_CALL_ATTEMPTS times before
+  // giving up on tools.
+  const TOOL_CALL_ATTEMPTS = 3;
+  let upstream;
+  for (let attempt = 1; attempt <= TOOL_CALL_ATTEMPTS; attempt++) {
+    upstream = await callOmniRoute(messages, { model: TOOL_CAPABLE_MODEL, includeTools: true });
+    if (upstream.ok) break;
+    // eslint-disable-next-line no-console
+    console.warn(`chat: tool-enabled completion failed (status ${upstream.status}), attempt ${attempt}/${TOOL_CALL_ATTEMPTS}`);
+  }
 
   if (!upstream.ok) {
     // Some providers/models (e.g. certain Ollama models routed through
-    // OmniRoute) reject an unrecognized `tools`/`tool_choice` field outright
-    // instead of ignoring it. Retry once without tools — and without the
-    // TOOL_CAPABLE_MODEL pin, since the pin only exists to make tool-calling
-    // behave; a plain completion should still go through the user's chosen
-    // model (or OmniRoute's own auto-routing) as before.
+    // OmniRoute) reject an unrecognized `tools`/`tool_choice` field
+    // outright instead of ignoring it — TOOL_CALL_ATTEMPTS failures in a
+    // row is a strong signal it's genuinely unsupported for this query, not
+    // a fluke. Fall back without tools — and without the TOOL_CAPABLE_MODEL
+    // pin, since the pin only exists to make tool-calling behave; a plain
+    // completion should still go through the user's chosen model (or
+    // OmniRoute's own auto-routing) as before.
     // eslint-disable-next-line no-console
-    console.warn('chat: tool-enabled completion failed, retrying without tools (status', upstream.status, ')');
+    console.warn('chat: all tool-enabled attempts failed, falling back without tools');
     upstream = await callOmniRoute(messages, { model, includeTools: false });
   }
 
