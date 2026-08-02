@@ -49,6 +49,16 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      # opencode-serve/hermes-runner are reached through nginx's
+      # IP-restricted /opencode-internal//hermes-internal/ locations (see
+      # the assistant.iamazim.com vhost) rather than a direct bridge-gateway
+      # route (confirmed unreliable on this VPS — see backend/.env comments).
+      # nginx picks the vhost by Host header, and fetch() cannot override
+      # that header (it's a forbidden header per the Fetch spec) — so
+      # instead this makes the container resolve the real domain name
+      # straight to the gateway IP, and OPENCODE_URL/HERMES_RUNNER_URL use
+      # that domain name so fetch() sends the correct Host automatically.
+      - "assistant.iamazim.com:172.25.0.1"
     networks:
       - assistant-net
       - db-network

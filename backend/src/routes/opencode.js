@@ -79,7 +79,9 @@ router.post('/session/:id/prompt', async (req, res) => {
       return res.status(502).json({ error: 'opencode rejected the prompt', detail });
     }
 
-    const deadline = Date.now() + 90000;
+    // 90s measured too tight in live testing (one real reply took just
+    // over it) — widened with headroom.
+    const deadline = Date.now() + 150000;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 1500));
       const poll = await ocFetch(`/api/session/${sessionId}/message`);
