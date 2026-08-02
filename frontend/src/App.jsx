@@ -1,5 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import { ThemeEffect } from './context/ThemeContext.jsx';
+import Sidebar from './components/layout/Sidebar.jsx';
+import MobileNav from './components/layout/MobileNav.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
@@ -17,23 +20,15 @@ function RequireAuth({ children }) {
 }
 
 function Layout({ children }) {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   if (!user) return children;
   return (
-    <div className="app-shell">
-      <nav className="navbar">
-        <Link to="/chat">Chat</Link>
-        <Link to="/opencode">OpenCode</Link>
-        <Link to="/usage">Usage</Link>
-        <Link to="/settings">Settings</Link>
-        <Link to="/profile">Profile</Link>
-        {user.role === 'admin' && <Link to="/admin">Admin</Link>}
-        <span className="spacer" />
-        <span>{user.username}</span>
-        <button onClick={() => { logout(); navigate('/login'); }}>Logout</button>
-      </nav>
-      <main>{children}</main>
+    <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-950">
+      <Sidebar />
+      <div className="flex flex-1 flex-col min-w-0">
+        <main className="flex-1 overflow-y-auto">{children}</main>
+        <MobileNav />
+      </div>
     </div>
   );
 }
@@ -41,6 +36,7 @@ function Layout({ children }) {
 export default function App() {
   return (
     <AuthProvider>
+      <ThemeEffect />
       <BrowserRouter>
         <Layout>
           <Routes>

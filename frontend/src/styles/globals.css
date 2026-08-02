@@ -1,41 +1,54 @@
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: #0f1115;
-  color: #e6e6e6;
+@import "tailwindcss";
+@import "highlight.js/styles/github-dark.css";
+
+/* Class-based dark mode (Tailwind v4 CSS-first config) — driven by a `dark`
+   class on <html>, toggled from the user's saved theme preference rather
+   than only prefers-color-scheme. See src/context/ThemeContext.jsx. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #4f7cff;
+  --color-brand-600: #3d63e0;
+  --color-brand-700: #2f4cb3;
+  --color-brand-800: #263c8c;
+  --color-brand-900: #1f306e;
 }
-.auth-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-.auth-form { display: flex; flex-direction: column; gap: 10px; width: 320px; }
-.auth-form input, .auth-form select { padding: 10px; border-radius: 6px; border: 1px solid #333; background: #1a1d24; color: #eee; }
-.auth-form button { padding: 10px; border-radius: 6px; border: none; background: #4f7cff; color: white; cursor: pointer; }
-.error { color: #ff6b6b; }
-.success { color: #51cf66; }
-.note { color: #999; font-size: 0.85em; }
 
-.app-shell { display: flex; flex-direction: column; height: 100vh; }
-.navbar { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: #1a1d24; border-bottom: 1px solid #2a2d34; }
-.navbar a { color: #ccc; text-decoration: none; }
-.navbar a:hover { color: #fff; }
-.navbar .spacer { flex: 1; }
-.navbar button { background: transparent; border: 1px solid #444; color: #ccc; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+html, body, #root { height: 100%; }
 
-main { flex: 1; overflow: auto; }
-.page { padding: 24px; max-width: 900px; margin: 0 auto; }
-.page section { margin-bottom: 32px; }
-.page table { width: 100%; border-collapse: collapse; }
-.page th, .page td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2a2d34; }
+body {
+  @apply bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased;
+  font-family: var(--font-sans);
+}
 
-.chat-page { display: flex; flex-direction: column; height: 100%; max-width: 800px; margin: 0 auto; }
-.chat-messages { flex: 1; overflow: auto; padding: 16px; }
-.bubble { max-width: 70%; margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; }
-.bubble.user { margin-left: auto; background: #4f7cff; }
-.bubble.assistant { background: #1e2129; }
-.bubble-meta { font-size: 0.75em; color: #999; margin-top: 4px; }
-.chat-input-bar { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #2a2d34; }
-.chat-input-bar textarea { flex: 1; resize: none; padding: 10px; border-radius: 6px; border: 1px solid #333; background: #1a1d24; color: #eee; }
-.chat-input-bar button { padding: 0 20px; border-radius: 6px; border: none; background: #4f7cff; color: white; cursor: pointer; }
-.chat-note { text-align: center; color: #777; font-size: 0.8em; padding: 4px 16px 12px; }
+/* Thin, unobtrusive scrollbars matching the rest of the design */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme(--color-slate-300) transparent;
+}
+.dark * {
+  scrollbar-color: theme(--color-slate-700) transparent;
+}
 
-.profile-form { display: flex; flex-direction: column; gap: 12px; max-width: 400px; }
-.profile-form label { display: flex; flex-direction: column; gap: 4px; }
+/* react-markdown code blocks: give them breathing room + rounded corners
+   without fighting highlight.js's own token colors */
+.md-content pre {
+  @apply rounded-lg overflow-x-auto my-2 text-sm;
+}
+.md-content :not(pre) > code {
+  @apply bg-slate-100 dark:bg-slate-800 rounded px-1 py-0.5 text-sm;
+}
+.md-content p { @apply my-2; }
+.md-content ul, .md-content ol { @apply my-2 pl-5; }
+.md-content ul { @apply list-disc; }
+.md-content ol { @apply list-decimal; }
+.md-content a { @apply text-brand-600 dark:text-brand-400 underline underline-offset-2; }
+.md-content table { @apply my-2 border-collapse; }
+.md-content th, .md-content td { @apply border border-slate-300 dark:border-slate-700 px-2 py-1 text-sm; }

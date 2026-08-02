@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState(null);
   const [saved, setSaved] = useState(false);
+  const { updateUser } = useAuth();
 
   useEffect(() => { api.profile().then(setProfile); }, []);
 
@@ -15,6 +17,7 @@ export default function ProfilePage() {
       theme: profile.theme,
     });
     setProfile(updated);
+    updateUser({ theme: updated.theme, language: updated.language });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
