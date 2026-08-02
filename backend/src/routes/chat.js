@@ -3,6 +3,9 @@ import multer from 'multer';
 import { pool } from '../db.js';
 import { requireAuth, requireApproved } from '../middleware/auth.js';
 import { config } from '../config.js';
+// --- Tool-calling: fazle-core DB reads + web search (see ../tools/) ---
+import { fazleToolDefinitions, executeFazleTool } from '../tools/fazleTools.js';
+import { searchToolDefinitions, executeSearchTool } from '../tools/searchTools.js';
 
 const router = Router();
 router.use(requireAuth, requireApproved);
@@ -42,6 +45,40 @@ function estimateTokens(text) {
   return Math.ceil((text || '').length / 4);
 }
 
+// --- Tool-calling: fazle DB tools + web search, combined for the model ---
+const allTools = [...fazleToolDefinitions, ...searchToolDefinitions];
+
+// Routes a single tool_call from the model to the right executor and always
+// resolves — a tool failure must never crash the surrounding chat request.
+async function executeToolCall(toolCall) {
+  const name = toolCall?.function?.name;
+  let args = {};
+  try {
+    args = toolCall?.function?.arguments ? JSON.parse(toolCall.function.arguments) : {};
+  } catch {
+    return { error: 'invalid tool arguments' };
+  }
+  if (name === 'web_search') return executeSearchTool(args);
+  return executeFazleTool(name, args);
+}
+
+// One place that calls OmniRoute's /chat/completions, optionally with the
+// tool definitions attached. Shared by the initial request, the no-tools
+// fallback retry, and the post-tool-call follow-up.
+async function callOmniRoute(messages, { model, includeTools }) {
+  const body = { model: model || 'auto', messages, stream: false };
+  if (includeTools) {
+    body.tools = allTools;
+    body.tool_choice = 'auto';
+  }
+  return fetch(`${config.omnirouteUrl}/chat/completions`, {
+    method: 'POST',
+    headers: omnirouteHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000),
+  });
+}
+
 router.get('/sessions', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, title, type, model_used, provider_used, updated_at
@@ -79,16 +116,20 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata }) 
     [sessionId, message, estimateTokens(message), metadata ? JSON.stringify(metadata) : null]
   );
 
-  const upstream = await fetch(`${config.omnirouteUrl}/chat/completions`, {
-    method: 'POST',
-    headers: omnirouteHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({
-      model: model || 'auto',
-      messages: [{ role: 'user', content: message }],
-      stream: false,
-    }),
-    signal: AbortSignal.timeout(60000),
-  });
+  // --- Tool-calling: give the model fazle-DB + web-search tools ---
+  const messages = [{ role: 'user', content: message }];
+  let upstream = await callOmniRoute(messages, { model, includeTools: true });
+
+  if (!upstream.ok) {
+    // Some providers/models (e.g. certain Ollama models routed through
+    // OmniRoute) reject an unrecognized `tools`/`tool_choice` field outright
+    // instead of ignoring it. Retry once without tools before treating this
+    // as a hard failure, so tool-calling never breaks chat for a model that
+    // simply doesn't support it.
+    // eslint-disable-next-line no-console
+    console.warn('chat: tool-enabled completion failed, retrying without tools (status', upstream.status, ')');
+    upstream = await callOmniRoute(messages, { model, includeTools: false });
+  }
 
   if (!upstream.ok) {
     const text = await upstream.text().catch(() => '');
@@ -98,8 +139,36 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata }) 
     throw err;
   }
 
-  const data = await upstream.json();
-  const reply = data.choices?.[0]?.message?.content || '';
+  let data = await upstream.json();
+  let assistantMsg = data.choices?.[0]?.message;
+
+  // If the model asked to call one or more tools, run them and ask again —
+  // this second call has no `tools` attached, we just want its final answer
+  // grounded in the tool results appended below.
+  if (assistantMsg?.tool_calls?.length) {
+    messages.push(assistantMsg);
+    for (const toolCall of assistantMsg.tool_calls) {
+      const result = await executeToolCall(toolCall);
+      messages.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result),
+      });
+    }
+
+    const followUp = await callOmniRoute(messages, { model, includeTools: false });
+    if (!followUp.ok) {
+      const text = await followUp.text().catch(() => '');
+      const err = new Error('AI gateway error');
+      err.status = 502;
+      err.detail = { status: followUp.status, detail: text };
+      throw err;
+    }
+    data = await followUp.json();
+    assistantMsg = data.choices?.[0]?.message;
+  }
+
+  const reply = assistantMsg?.content || '';
   const provider = data.provider || data.model?.split('/')?.[0] || 'unknown';
   const modelUsed = data.model || model || 'auto';
   const tokensIn = data.usage?.prompt_tokens ?? estimateTokens(message);
