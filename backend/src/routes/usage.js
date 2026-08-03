@@ -5,6 +5,11 @@ import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);
 
+// Warn-only daily message quota, not a hard token-cost ceiling — informs the
+// user, never blocks a request (Owner decision 2026-08-03). Not per-provider:
+// counts every chat request today regardless of which provider served it.
+const FREE_DAILY_MESSAGE_LIMIT = parseInt(process.env.FREE_DAILY_MESSAGE_LIMIT, 10) || 50;
+
 router.get('/daily', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT date, provider, model, tokens_input, tokens_output, tokens_total, requests_count, cost, is_free
@@ -28,16 +33,19 @@ router.get('/monthly', async (req, res) => {
 });
 
 router.get('/free-remaining', async (req, res) => {
-  // Placeholder until OmniRoute exposes real per-provider free-tier quota
-  // remaining (Priority 1 providers). Reports what we've consumed today
-  // against free-tagged usage; real ceiling numbers come from OmniRoute later.
   const { rows } = await pool.query(
-    `SELECT provider, SUM(tokens_total) AS tokens_used_today
-       FROM token_usage WHERE user_id = $1 AND date = CURRENT_DATE AND is_free = true
-      GROUP BY provider`,
+    `SELECT COALESCE(SUM(requests_count), 0) AS messages_used_today
+       FROM token_usage WHERE user_id = $1 AND date = CURRENT_DATE`,
     [req.user.sub]
   );
-  res.json({ note: 'free-tier ceilings not yet wired from OmniRoute', usage_today: rows });
+  const used = parseInt(rows[0].messages_used_today, 10) || 0;
+  res.json({
+    daily_limit: FREE_DAILY_MESSAGE_LIMIT,
+    messages_used_today: used,
+    messages_remaining_today: Math.max(0, FREE_DAILY_MESSAGE_LIMIT - used),
+    limit_reached: used >= FREE_DAILY_MESSAGE_LIMIT,
+    enforcement: 'warn_only',
+  });
 });
 
 export default router;

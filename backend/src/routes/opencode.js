@@ -1,9 +1,14 @@
 import { Router } from 'express';
-import { requireAuth, requireApproved } from '../middleware/auth.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { config } from '../config.js';
 
 const router = Router();
-router.use(requireAuth, requireApproved);
+// Admin-only (2026-08-03: was requireApproved — open to every approved
+// user — until OpenCode's filesystem scope was widened back to the whole
+// VPS, including fazle-core, per Owner decision. Only admin controls
+// git/restart/deploy anyway, so the actual power was always meant to sit
+// with admin; this just matches the gate to the access.
+router.use(requireAuth, requireAdmin);
 
 // opencode serve (host-level systemd service, see opencode-serve.service)
 // exposes its own real REST API — this file proxies it rather than

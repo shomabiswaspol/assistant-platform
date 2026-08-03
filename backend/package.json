@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "migrate": "node src/migrate.js"
+    "migrate": "node src/migrate.js",
+    "test": "JWT_SECRET=test-only-dummy JWT_REFRESH_SECRET=test-only-dummy ENCRYPTION_KEY=test-only-dummy node --test tests/"
   },
   "dependencies": {
     "express": "^4.19.2",

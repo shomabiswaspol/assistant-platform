@@ -34,7 +34,9 @@ export const config = {
     maxPool: parseInt(process.env.FAZLE_DB_MAX_POOL || '3', 10),
     statementTimeoutMs: parseInt(process.env.FAZLE_DB_STATEMENT_TIMEOUT || '5000', 10),
   },
-  smtpHost: process.env.SMTP_HOST || '',
+  appBaseUrl: process.env.APP_BASE_URL || 'https://assistant.iamazim.com',
+  resendApiKey: process.env.RESEND_API_KEY || '',
+  resendFrom: process.env.RESEND_FROM || 'onboarding@resend.dev',
   admin: {
     email: process.env.ADMIN_EMAIL || '',
     username: process.env.ADMIN_USERNAME || 'admin',

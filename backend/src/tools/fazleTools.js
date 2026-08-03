@@ -1,4 +1,5 @@
 import { getFazleReaderPool, fazleBridgeEnabled } from '../db.js';
+import { maskPiiInObject } from '../lib/piiMask.js';
 
 // Tool-calling wrappers around fazle-core's read-only bridge, for the chat
 // model to call directly during a conversation (see routes/chat.js).
@@ -137,13 +138,31 @@ export const fazleToolDefinitions = [
     function: {
       name: 'get_cash_transactions',
       description:
-        'List real cash transactions (salary, advances, bonuses, deductions, corrections) from fpe_cash_transactions — the sole canonical cash ledger (Owner Directive 2026-06-29). Never mixes in wbom_cash_transactions, which is legacy/archive only.',
+        'List individual real cash transactions (salary, advances, bonuses, deductions, corrections) from fpe_cash_transactions — the sole canonical cash ledger (Owner Directive 2026-06-29). Never mixes in wbom_cash_transactions, which is legacy/archive only. For a total/sum/count/average, use get_cash_transactions_summary instead of adding these rows up yourself — manual summation over many rows is unreliable.',
       parameters: {
         type: 'object',
         properties: {
           limit: { type: 'integer', description: 'Max rows to return (default 30, max 100)' },
           date: { type: 'string', description: 'Optional exact transaction date filter, YYYY-MM-DD' },
           status: { type: 'string', description: "Optional transaction_status filter, e.g. 'final', 'pending', 'reversed', 'corrected'" },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_cash_transactions_summary',
+      description:
+        "Get an exact, database-computed total, count, and average of real cash transactions from fpe_cash_transactions — always use this for any question about a total/sum/how much/how many, instead of calling get_cash_transactions and adding the rows up yourself (the database computes this exactly; manual arithmetic over many rows is unreliable and has produced wrong totals before). Also returns a breakdown by category and by status. Never mixes in wbom_cash_transactions.",
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'Optional exact transaction date filter, YYYY-MM-DD' },
+          date_from: { type: 'string', description: 'Optional range start (inclusive), YYYY-MM-DD — use with date_to for a date range instead of a single date' },
+          date_to: { type: 'string', description: 'Optional range end (inclusive), YYYY-MM-DD' },
+          status: { type: 'string', description: "Optional transaction_status filter, e.g. 'final', 'pending', 'reversed', 'corrected'" },
+          category: { type: 'string', description: 'Optional category filter' },
         },
       },
     },
@@ -201,7 +220,7 @@ export const fazleToolDefinitions = [
   },
 ];
 
-export async function executeFazleTool(toolName, args = {}) {
+export async function executeFazleTool(toolName, args = {}, { isAdmin = false } = {}) {
   try {
     switch (toolName) {
       case 'get_contacts': {
@@ -215,13 +234,13 @@ export async function executeFazleTool(toolName, args = {}) {
               LIMIT $2`,
             [term, limit]
           );
-          return error ? { error } : rows;
+          return error ? { error } : maskPiiInObject(rows, { isAdmin });
         }
         const { rows, error } = await runQuery(
           'SELECT contact_id, display_name, whatsapp_number, relation, company_name FROM ai_read_contacts LIMIT $1',
           [limit]
         );
-        return error ? { error } : rows;
+        return error ? { error } : maskPiiInObject(rows, { isAdmin });
       }
 
       case 'get_employees': {
@@ -244,13 +263,13 @@ export async function executeFazleTool(toolName, args = {}) {
               ORDER BY received_at DESC LIMIT $2`,
             [term, limit]
           );
-          return error ? { error } : rows;
+          return error ? { error } : maskPiiInObject(rows, { isAdmin });
         }
         const { rows, error } = await runQuery(
           'SELECT sender_number, sender_name, message_body, direction, source, received_at FROM ai_read_recent_messages ORDER BY received_at DESC LIMIT $1',
           [limit]
         );
-        return error ? { error } : rows;
+        return error ? { error } : maskPiiInObject(rows, { isAdmin });
       }
 
       case 'get_knowledge_base': {
@@ -324,6 +343,55 @@ export async function executeFazleTool(toolName, args = {}) {
         return error ? { error } : rows;
       }
 
+      case 'get_cash_transactions_summary': {
+        const conds = [];
+        const params = [];
+        if (args.date) {
+          params.push(args.date);
+          conds.push(`transaction_date = $${params.length}`);
+        }
+        if (args.date_from) {
+          params.push(args.date_from);
+          conds.push(`transaction_date >= $${params.length}`);
+        }
+        if (args.date_to) {
+          params.push(args.date_to);
+          conds.push(`transaction_date <= $${params.length}`);
+        }
+        if (args.status) {
+          params.push(args.status);
+          conds.push(`transaction_status = $${params.length}`);
+        }
+        if (args.category) {
+          params.push(args.category);
+          conds.push(`category = $${params.length}`);
+        }
+        const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+
+        // Two queries, both computed by Postgres — never sum in JS/the model.
+        const totals = await runQuery(
+          `SELECT COUNT(*) AS transaction_count,
+                  COALESCE(SUM(amount), 0) AS total_amount,
+                  COALESCE(AVG(amount), 0)::numeric(14,2) AS average_amount
+             FROM ai_read_cash_transactions ${where}`,
+          params
+        );
+        if (totals.error) return { error: totals.error };
+
+        const byCategory = await runQuery(
+          `SELECT category, COUNT(*) AS transaction_count, COALESCE(SUM(amount), 0) AS total_amount
+             FROM ai_read_cash_transactions ${where}
+            GROUP BY category ORDER BY total_amount DESC`,
+          params
+        );
+        if (byCategory.error) return { error: byCategory.error };
+
+        return {
+          ...totals.rows[0],
+          by_category: byCategory.rows,
+        };
+      }
+
       case 'get_escort_programs': {
         const limit = clampLimit(args.limit, 30, 100);
         const conds = [];
@@ -345,7 +413,7 @@ export async function executeFazleTool(toolName, args = {}) {
             ORDER BY program_date DESC LIMIT $${params.length}`,
           params
         );
-        return error ? { error } : rows;
+        return error ? { error } : maskPiiInObject(rows, { isAdmin });
       }
 
       case 'get_module_bridge_status': {
@@ -399,7 +467,7 @@ export async function executeFazleTool(toolName, args = {}) {
              FROM ai_read_recruitment_leads ${where} LIMIT $${params.length}`,
           params
         );
-        return error ? { error } : rows;
+        return error ? { error } : maskPiiInObject(rows, { isAdmin });
       }
 
       default:

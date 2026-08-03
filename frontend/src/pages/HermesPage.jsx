@@ -15,6 +15,12 @@ export default function HermesPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [personas, setPersonas] = useState([]);
+  const [persona, setPersona] = useState('helpful');
+  const [personaLocked, setPersonaLocked] = useState(false);
+  const [mode, setMode] = useState('READ');
+  const [modes, setModes] = useState(['READ', 'BUILD', 'RUN']);
+  const [modeBusy, setModeBusy] = useState(false);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -22,7 +28,33 @@ export default function HermesPage() {
       .then((msgs) => setMessages(msgs.map((m) => ({ role: m.role, content: m.content, createdAt: m.created_at }))))
       .catch((err) => setError(err.message || 'Failed to load Hermes history'))
       .finally(() => setLoading(false));
+    api.hermesPersonas().then(setPersonas).catch(() => {});
+    api.hermesState()
+      .then((s) => { setPersona(s.persona); setPersonaLocked(s.locked); })
+      .catch(() => {});
+    api.hermesMode()
+      .then((m) => { setMode(m.mode); setModes(m.modes || ['READ', 'BUILD', 'RUN']); })
+      .catch(() => {});
   }, []);
+
+  async function handleModeChange(newMode) {
+    if (newMode === mode) return;
+    if (newMode === 'RUN' || newMode === 'BUILD') {
+      const warning = newMode === 'RUN'
+        ? "Escalate Hermes to RUN mode? This allows full terminal access, arbitrary shell commands, and service restarts (still gated by Hermes's own confirm-before-destructive prompt, but the capability itself widens a lot)."
+        : 'Escalate Hermes to BUILD mode? This allows reading/writing files and running sandboxed code.';
+      if (!confirm(warning)) return;
+    }
+    setModeBusy(true);
+    try {
+      const res = await api.hermesSetMode(newMode);
+      setMode(res.mode);
+    } catch (err) {
+      setError(err.message || 'Failed to change Hermes mode');
+    } finally {
+      setModeBusy(false);
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,8 +68,9 @@ export default function HermesPage() {
     setMessages((m) => [...m, { role: 'user', content: text }]);
     setSending(true);
     try {
-      const res = await api.hermesSend(text);
+      const res = await api.hermesSend(text, persona);
       setMessages((m) => [...m, { role: 'assistant', content: res.reply }]);
+      setPersonaLocked(true); // persona is set once per session, from the first message on
     } catch (err) {
       setError(err.message || 'Hermes request failed');
     } finally {
@@ -50,6 +83,8 @@ export default function HermesPage() {
     await api.hermesReset();
     setMessages([]);
     setError('');
+    setPersonaLocked(false);
+    setPersona('helpful');
   }
 
   if (loading) {
@@ -62,12 +97,42 @@ export default function HermesPage() {
         <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
           <Bot size={16} className="text-brand-500" /> Hermes — full capability
         </div>
-        <button
-          onClick={handleReset}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-        >
-          <RotateCcw size={13} /> Reset conversation
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={mode}
+            disabled={modeBusy}
+            onChange={(e) => handleModeChange(e.target.value)}
+            title="Hermes capability mode — gates what it's allowed to do, not just who can invoke it"
+            className={`rounded-lg border px-2 py-1.5 text-xs font-medium disabled:opacity-50 ${
+              mode === 'RUN'
+                ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400'
+                : mode === 'BUILD'
+                ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400'
+                : 'border-slate-300 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
+            {modes.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <select
+            value={persona}
+            disabled={personaLocked}
+            onChange={(e) => setPersona(e.target.value)}
+            title={personaLocked ? 'Persona is locked for this session — reset to change it' : 'Persona applies for the whole session'}
+            className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-300 disabled:opacity-50"
+          >
+            {personas.map((p) => (
+              <option key={p.key} value={p.key}>{p.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+          >
+            <RotateCcw size={13} /> Reset conversation
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">

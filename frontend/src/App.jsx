@@ -9,6 +9,7 @@ import MobileNav from './components/layout/MobileNav.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
+import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 import ChatPage from './pages/ChatPage.jsx';
 import OpenCodePage from './pages/OpenCodePage.jsx';
 import HermesPage from './pages/HermesPage.jsx';
@@ -74,6 +75,7 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
             <Route path="/opencode" element={<RequireAuth><OpenCodePage /></RequireAuth>} />
             <Route path="/hermes" element={<RequireAuth><HermesPage /></RequireAuth>} />

@@ -35,6 +35,8 @@ export const api = {
   login: (payload) => request('/auth/login', { method: 'POST', body: payload, auth: false }),
   me: () => request('/auth/me'),
   forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: { email }, auth: false }),
+  resetPassword: (token, new_password) =>
+    request('/auth/reset-password', { method: 'POST', body: { token, new_password }, auth: false }),
 
   chatSessions: () => request('/chat/sessions'),
   chatMessages: (sessionId) => request(`/chat/sessions/${sessionId}/messages`),
@@ -70,6 +72,7 @@ export const api = {
 
   usageDaily: () => request('/usage/daily'),
   usageMonthly: () => request('/usage/monthly'),
+  usageFreeRemaining: () => request('/usage/free-remaining'),
 
   opencodeSessions: () => request('/opencode/session'),
   opencodeCreateSession: () => request('/opencode/session', { method: 'POST' }),
@@ -78,6 +81,10 @@ export const api = {
     request(`/opencode/session/${sessionId}/prompt`, { method: 'POST', body: { text } }),
 
   hermesMessages: () => request('/hermes/messages'),
-  hermesSend: (message) => request('/hermes/send', { method: 'POST', body: { message } }),
+  hermesPersonas: () => request('/hermes/personas'),
+  hermesState: () => request('/hermes/state'),
+  hermesSend: (message, persona) => request('/hermes/send', { method: 'POST', body: { message, persona } }),
   hermesReset: () => request('/hermes/reset', { method: 'POST' }),
+  hermesMode: () => request('/hermes/mode'),
+  hermesSetMode: (mode) => request('/hermes/mode', { method: 'POST', body: { mode } }),
 };

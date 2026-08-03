@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getFazleReaderPool, fazleBridgeEnabled } from '../db.js';
 import { requireAuth, requireApproved } from '../middleware/auth.js';
+import { maskPiiInObject } from '../lib/piiMask.js';
 
 const router = Router();
 router.use(requireAuth, requireApproved);
@@ -24,7 +25,7 @@ router.use(requireAuth, requireApproved);
 
 const FORBIDDEN_SQL = /\b(insert|update|delete|drop|truncate|alter|create|grant|revoke|copy)\b/i;
 
-async function readOnlyQuery(res, sql, params = []) {
+async function readOnlyQuery(res, sql, params = [], { isAdmin = false } = {}) {
   if (FORBIDDEN_SQL.test(sql)) {
     // Should be unreachable — every query below is a hardcoded literal —
     // this is defense-in-depth, not something callers can trigger.
@@ -39,7 +40,11 @@ async function readOnlyQuery(res, sql, params = []) {
   }
   try {
     const { rows } = await pool.query(sql, params);
-    return res.json(rows);
+    // PII masking policy (AI_ROLES_POLICY.md "Data Display Rules"): a
+    // non-admin caller must never see a raw phone number, regardless of
+    // which route/query produced it. Fields not in PII_FIELDS pass
+    // through unchanged, so this is a no-op for routes with no PII.
+    return res.json(maskPiiInObject(rows, { isAdmin }));
   } catch (err) {
     // Never include err (may carry connection details) in the response or
     // in a log line that could reach a report/commit — message text only,
@@ -71,7 +76,8 @@ router.get('/contacts', (req, res) => {
   return readOnlyQuery(
     res,
     'SELECT contact_id, display_name, whatsapp_number, relation, company_name FROM ai_read_contacts LIMIT $1',
-    [limit]
+    [limit],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 
@@ -89,7 +95,8 @@ router.get('/messages', (req, res) => {
   return readOnlyQuery(
     res,
     'SELECT sender_number, sender_name, message_body, direction, source, received_at FROM ai_read_recent_messages ORDER BY received_at DESC LIMIT $1',
-    [limit]
+    [limit],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 
@@ -161,14 +168,18 @@ router.get('/escort-programs', (req, res) => {
     `SELECT program_id, mother_vessel, lighter_vessel, destination, program_date, shift, status,
             escort_name, escort_mobile, assignment_time, completion_time
        FROM ai_read_escort_programs ORDER BY program_date DESC LIMIT $1`,
-    [limit]
+    [limit],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 
 router.get('/module-bridge-status', (_req, res) => {
+  // ai_read_module_bridge_status has no "status" column — real columns are
+  // service_name, last_seen, queue_depth, metadata (verified 2026-08-02,
+  // same fix already applied in fazleTools.js's get_module_bridge_status).
   return readOnlyQuery(
     res,
-    'SELECT service_name, status, last_seen, metadata FROM ai_read_module_bridge_status LIMIT 20'
+    'SELECT service_name, last_seen, queue_depth, metadata FROM ai_read_module_bridge_status LIMIT 20'
   );
 });
 
@@ -188,7 +199,8 @@ router.get('/recruitment-leads', (req, res) => {
   return readOnlyQuery(
     res,
     'SELECT id, phone, funnel_stage, source, full_name, area, score_bucket, created_at FROM ai_read_recruitment_leads LIMIT $1',
-    [limit]
+    [limit],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 

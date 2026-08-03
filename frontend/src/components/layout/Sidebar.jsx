@@ -11,10 +11,12 @@ import UserMenu from './UserMenu.jsx';
 // own section, so there is exactly one sidebar everywhere in the app.
 // SessionSidebar.jsx has been removed.
 
-const WORKSPACE_ITEMS = [{ to: '/opencode', label: 'OpenCode', icon: Code2 }];
-// Hermes: full-capability agent (real terminal/file/code_execution access
-// via hermes-runner.service) — admin-only, appended conditionally in
-// Sidebar() below, not part of the static list everyone sees.
+// OpenCode and Hermes are both admin-only (2026-08-03: OpenCode used to be
+// open to every approved user, but its filesystem scope is now the whole
+// VPS again including fazle-core — see opencode-serve.service — so it must
+// stay behind the same admin-only gate Hermes already has). Appended
+// conditionally in Sidebar() below, not part of what every user sees.
+const OPENCODE_ITEM = { to: '/opencode', label: 'OpenCode', icon: Code2 };
 const HERMES_ITEM = { to: '/hermes', label: 'Hermes', icon: Bot };
 
 const ACCOUNT_ITEMS = [
@@ -125,10 +127,9 @@ export default function Sidebar({ open = true, mobileOpen = false, onCloseMobile
       </div>
       <ChatHistorySection onNavigateAway={onCloseMobile} />
       <nav className="px-3 py-3 flex flex-col gap-4 border-t border-slate-200 dark:border-slate-800 shrink-0">
-        <NavGroup
-          title="Workspace"
-          items={user?.role === 'admin' ? [...WORKSPACE_ITEMS, HERMES_ITEM] : WORKSPACE_ITEMS}
-        />
+        {user?.role === 'admin' && (
+          <NavGroup title="Workspace" items={[OPENCODE_ITEM, HERMES_ITEM]} />
+        )}
         <NavGroup title="Account" items={ACCOUNT_ITEMS} />
         {user?.role === 'admin' && <NavGroup title="Admin" items={[{ to: '/admin', label: 'Admin', icon: ShieldCheck }]} />}
       </nav>

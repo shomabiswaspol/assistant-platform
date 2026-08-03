@@ -3,6 +3,7 @@ import multer from 'multer';
 import { pool } from '../db.js';
 import { requireAuth, requireApproved } from '../middleware/auth.js';
 import { config } from '../config.js';
+import { decryptSecret } from '../utils/encryption.js';
 // --- Tool-calling: fazle-core DB reads + web search (see ../tools/) ---
 import { fazleToolDefinitions, executeFazleTool } from '../tools/fazleTools.js';
 import { searchToolDefinitions, executeSearchTool } from '../tools/searchTools.js';
@@ -60,7 +61,10 @@ const TOOL_CAPABLE_MODEL = 'groq/llama-3.3-70b-versatile';
 
 // Routes a single tool_call from the model to the right executor and always
 // resolves — a tool failure must never crash the surrounding chat request.
-async function executeToolCall(toolCall) {
+// isAdmin is threaded through to executeFazleTool so PII fields (phone
+// numbers) are masked for non-admin callers per AI_ROLES_POLICY.md's
+// "Data Display Rules" — see backend/src/lib/piiMask.js.
+async function executeToolCall(toolCall, { isAdmin = false } = {}) {
   const name = toolCall?.function?.name;
   let args = {};
   try {
@@ -69,7 +73,7 @@ async function executeToolCall(toolCall) {
     return { error: 'invalid tool arguments' };
   }
   if (name === 'web_search') return executeSearchTool(args);
-  return executeFazleTool(name, args);
+  return executeFazleTool(name, args, { isAdmin });
 }
 
 // One place that calls OmniRoute's /chat/completions, optionally with the
@@ -87,6 +91,83 @@ async function callOmniRoute(messages, { model, includeTools }) {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(60000),
   });
+}
+
+// --- BYO API keys: only used for the no-tools fallback completion (see
+// sendTextMessage below). Tool-enabled calls stay pinned to
+// TOOL_CAPABLE_MODEL via OmniRoute always — a user's own key is never
+// substituted there, since OmniRoute+Groq is the one combination confirmed
+// reliable for tool_calls (see TOOL_CAPABLE_MODEL comment above).
+const BYO_PROVIDER_BASE_URLS = {
+  openai: 'https://api.openai.com/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  deepseek: 'https://api.deepseek.com',
+  moonshot: 'https://api.moonshot.ai/v1',
+};
+
+function inferProvider(model) {
+  if (!model || model === 'auto') return null;
+  const slash = model.indexOf('/');
+  return slash === -1 ? null : model.slice(0, slash);
+}
+
+async function getUserApiKey(userId, provider) {
+  const { rows } = await pool.query(
+    `SELECT encrypted_key FROM user_api_keys WHERE user_id = $1 AND provider = $2 AND is_active = true LIMIT 1`,
+    [userId, provider]
+  );
+  if (!rows.length) return null;
+  try {
+    return decryptSecret(rows[0].encrypted_key);
+  } catch {
+    // Corrupt/undecryptable row (e.g. ENCRYPTION_KEY rotated since it was
+    // saved) — treat as absent, fall back to OmniRoute, never throw here.
+    return null;
+  }
+}
+
+// Calls the user's own provider directly, bypassing OmniRoute entirely.
+// Returns null for an unsupported provider (caller falls back to OmniRoute),
+// or { ok, content, usage } / { ok: false, status, text } once attempted.
+async function callProviderDirect(provider, apiKey, messages, model) {
+  const bareModel = model.includes('/') ? model.slice(model.indexOf('/') + 1) : model;
+
+  if (provider === 'anthropic') {
+    const systemMsg = messages.find((m) => m.role === 'system');
+    const chatMsgs = messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model: bareModel, max_tokens: 4096, ...(systemMsg ? { system: systemMsg.content } : {}), messages: chatMsgs }),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!resp.ok) return { ok: false, status: resp.status, text: await resp.text().catch(() => '') };
+    const data = await resp.json();
+    return {
+      ok: true,
+      content: data.content?.[0]?.text || '',
+      usage: { prompt_tokens: data.usage?.input_tokens, completion_tokens: data.usage?.output_tokens },
+    };
+  }
+
+  const baseUrl = BYO_PROVIDER_BASE_URLS[provider];
+  if (!baseUrl) return null;
+
+  const resp = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: bareModel, messages, stream: false }),
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!resp.ok) return { ok: false, status: resp.status, text: await resp.text().catch(() => '') };
+  const data = await resp.json();
+  return { ok: true, content: data.choices?.[0]?.message?.content || '', usage: data.usage };
 }
 
 router.get('/sessions', async (req, res) => {
@@ -112,7 +193,7 @@ router.get('/sessions/:id/messages', async (req, res) => {
 
 // Shared by /send and /send-audio (a transcribed voice note is just text by
 // the time it gets here) — one place that talks to OmniRoute and persists.
-async function sendTextMessage({ userId, sessionId, message, model, metadata }) {
+async function sendTextMessage({ userId, sessionId, message, model, metadata, isAdmin = false }) {
   if (!sessionId) {
     const { rows } = await pool.query(
       `INSERT INTO chat_sessions (user_id, title, type) VALUES ($1, $2, 'chat') RETURNING id`,
@@ -151,6 +232,7 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata }) 
     console.warn(`chat: tool-enabled completion failed (status ${upstream.status}), attempt ${attempt}/${TOOL_CALL_ATTEMPTS}`);
   }
 
+  let directResult = null;
   if (!upstream.ok) {
     // Some providers/models (e.g. certain Ollama models routed through
     // OmniRoute) reject an unrecognized `tools`/`tool_choice` field
@@ -162,19 +244,49 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata }) 
     // OmniRoute's own auto-routing) as before.
     // eslint-disable-next-line no-console
     console.warn('chat: all tool-enabled attempts failed, falling back without tools');
-    upstream = await callOmniRoute(messages, { model, includeTools: false });
+
+    // BYO key: only for this no-tools fallback, never for the tool-enabled
+    // call above. If the user has their own key for the selected model's
+    // provider, call that provider directly instead of OmniRoute.
+    const byoProvider = inferProvider(model);
+    if (byoProvider) {
+      const byoKey = await getUserApiKey(userId, byoProvider);
+      if (byoKey) {
+        try {
+          directResult = await callProviderDirect(byoProvider, byoKey, messages, model);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`chat: BYO direct call to ${byoProvider} failed, falling back to OmniRoute:`, err.message);
+          directResult = null;
+        }
+      }
+    }
+    if (!directResult) {
+      upstream = await callOmniRoute(messages, { model, includeTools: false });
+    }
   }
 
-  if (!upstream.ok) {
-    const text = await upstream.text().catch(() => '');
-    const err = new Error('AI gateway error');
-    err.status = 502;
-    err.detail = { status: upstream.status, detail: text };
-    throw err;
+  let data, assistantMsg;
+  if (directResult) {
+    if (!directResult.ok) {
+      const err = new Error('AI gateway error');
+      err.status = 502;
+      err.detail = { status: directResult.status, detail: directResult.text };
+      throw err;
+    }
+    assistantMsg = { role: 'assistant', content: directResult.content };
+    data = { model, provider: inferProvider(model), usage: directResult.usage };
+  } else {
+    if (!upstream.ok) {
+      const text = await upstream.text().catch(() => '');
+      const err = new Error('AI gateway error');
+      err.status = 502;
+      err.detail = { status: upstream.status, detail: text };
+      throw err;
+    }
+    data = await upstream.json();
+    assistantMsg = data.choices?.[0]?.message;
   }
-
-  let data = await upstream.json();
-  let assistantMsg = data.choices?.[0]?.message;
 
   // If the model asked to call one or more tools, run them and ask again —
   // this second call has no `tools` attached, we just want its final answer
@@ -182,7 +294,7 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata }) 
   if (assistantMsg?.tool_calls?.length) {
     messages.push(assistantMsg);
     for (const toolCall of assistantMsg.tool_calls) {
-      const result = await executeToolCall(toolCall);
+      const result = await executeToolCall(toolCall, { isAdmin });
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
@@ -237,7 +349,13 @@ router.post('/send', async (req, res) => {
   const { session_id, message, model } = req.body || {};
   if (!message) return res.status(400).json({ error: 'message required' });
   try {
-    const result = await sendTextMessage({ userId: req.user.sub, sessionId: session_id, message, model });
+    const result = await sendTextMessage({
+      userId: req.user.sub,
+      sessionId: session_id,
+      message,
+      model,
+      isAdmin: req.user?.role === 'admin',
+    });
     res.json(result);
   } catch (err) {
     if (err.status === 502) return res.status(502).json({ error: err.message, ...err.detail });
@@ -286,6 +404,7 @@ router.post('/send-audio', upload.single('audio'), async (req, res) => {
       sessionId: req.body?.session_id,
       message: transcribedText,
       metadata: { source: 'voice' },
+      isAdmin: req.user?.role === 'admin',
     });
     res.json({ ...result, transcribed_text: transcribedText });
   } catch (err) {

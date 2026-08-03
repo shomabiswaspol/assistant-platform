@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { pool } from '../db.js';
 import { config } from '../config.js';
 import { requireAuth } from '../middleware/auth.js';
+import { sendPasswordResetEmail } from '../utils/email.js';
 
 const router = Router();
 
@@ -102,12 +103,8 @@ router.post('/forgot-password', async (req, res) => {
       'INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)',
       [rows[0].id, token, expiresAt]
     );
-    if (config.smtpHost) {
-      // SMTP not configured in this pass — see emailService (deferred).
-    } else {
-      // eslint-disable-next-line no-console
-      console.log(`[password-reset] no SMTP configured — reset link for ${email}: /reset-password?token=${token}`);
-    }
+    const resetUrl = `${config.appBaseUrl}/reset-password?token=${token}`;
+    await sendPasswordResetEmail(email, resetUrl);
   }
   return res.json({ message: 'If that email is registered, a reset link has been generated.' });
 });

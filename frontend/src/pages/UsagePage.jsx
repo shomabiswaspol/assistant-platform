@@ -7,10 +7,12 @@ import ProviderBarChart from '../components/usage/ProviderBarChart.jsx';
 export default function UsagePage() {
   const [daily, setDaily] = useState([]);
   const [monthly, setMonthly] = useState([]);
+  const [freeRemaining, setFreeRemaining] = useState(null);
 
   useEffect(() => {
     api.usageDaily().then(setDaily);
     api.usageMonthly().then(setMonthly);
+    api.usageFreeRemaining().then(setFreeRemaining);
   }, []);
 
   const todayTokens = useMemo(() => daily.reduce((s, d) => s + Number(d.tokens_total || 0), 0), [daily]);
@@ -44,6 +46,14 @@ export default function UsagePage() {
         <StatTile label="Requests today" value={todayRequests.toLocaleString()} />
         <StatTile label="Cost this month" value={`$${monthCost.toFixed(4)}`} />
         <StatTile label="Free-tier share" value={`${freeShare}%`} sub="of this month's tokens" />
+        {freeRemaining && (
+          <StatTile
+            label="Daily messages left"
+            value={`${freeRemaining.messages_remaining_today} / ${freeRemaining.daily_limit}`}
+            sub={freeRemaining.limit_reached ? 'Daily guideline reached (not blocked)' : 'Resets at midnight'}
+            warn={freeRemaining.limit_reached}
+          />
+        )}
       </div>
 
       <Card>
