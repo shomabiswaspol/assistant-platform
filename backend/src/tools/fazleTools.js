@@ -135,6 +135,22 @@ export const fazleToolDefinitions = [
   {
     type: 'function',
     function: {
+      name: 'get_cash_transactions',
+      description:
+        'List real cash transactions (salary, advances, bonuses, deductions, corrections) from fpe_cash_transactions — the sole canonical cash ledger (Owner Directive 2026-06-29). Never mixes in wbom_cash_transactions, which is legacy/archive only.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', description: 'Max rows to return (default 30, max 100)' },
+          date: { type: 'string', description: 'Optional exact transaction date filter, YYYY-MM-DD' },
+          status: { type: 'string', description: "Optional transaction_status filter, e.g. 'final', 'pending', 'reversed', 'corrected'" },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_escort_programs',
       description: 'List escort programs (vessel escort assignments), most recent first. Optionally filter by date and/or status.',
       parameters: {
@@ -282,6 +298,29 @@ export async function executeFazleTool(toolName, args = {}) {
       case 'get_billing_outstanding': {
         const limit = clampLimit(args.limit, 30, 100);
         const { rows, error } = await runQuery('SELECT * FROM ai_read_billing_outstanding LIMIT $1', [limit]);
+        return error ? { error } : rows;
+      }
+
+      case 'get_cash_transactions': {
+        const limit = clampLimit(args.limit, 30, 100);
+        const conds = [];
+        const params = [];
+        if (args.date) {
+          params.push(args.date);
+          conds.push(`transaction_date = $${params.length}`);
+        }
+        if (args.status) {
+          params.push(args.status);
+          conds.push(`transaction_status = $${params.length}`);
+        }
+        params.push(limit);
+        const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+        const { rows, error } = await runQuery(
+          `SELECT transaction_ref, transaction_date, amount, category, transaction_status,
+                  payout_method, employee_name, is_reversal
+             FROM ai_read_cash_transactions ${where} LIMIT $${params.length}`,
+          params
+        );
         return error ? { error } : rows;
       }
 

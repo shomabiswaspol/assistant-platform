@@ -124,6 +124,36 @@ router.get('/billing-outstanding', (req, res) => {
   return readOnlyQuery(res, 'SELECT * FROM ai_read_billing_outstanding LIMIT $1', [limit]);
 });
 
+// ai_read_cash_transactions — fpe_cash_transactions ONLY, never
+// wbom_cash_transactions (legacy/archive, Owner Directive 2026-06-29 — see
+// CANONICAL_BUSINESS_RULES.md §Cash Transaction). Proposal:
+// proposal_ai_read_cash_transactions_20260802.md. The view itself is
+// pending DDL on fazle-core's side as of this code — until then this
+// endpoint returns a clean 503/502 (fazleBridgeEnabled() check / query
+// error), never silently wrong or mixed-table data.
+router.get('/cash-transactions', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
+  const conds = [];
+  const params = [];
+  if (req.query.date) {
+    params.push(req.query.date);
+    conds.push(`transaction_date = $${params.length}`);
+  }
+  if (req.query.status) {
+    params.push(req.query.status);
+    conds.push(`transaction_status = $${params.length}`);
+  }
+  params.push(limit);
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  return readOnlyQuery(
+    res,
+    `SELECT transaction_ref, transaction_date, amount, category, transaction_status,
+            payout_method, employee_name, is_reversal
+       FROM ai_read_cash_transactions ${where} LIMIT $${params.length}`,
+    params
+  );
+});
+
 router.get('/escort-programs', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
   return readOnlyQuery(
