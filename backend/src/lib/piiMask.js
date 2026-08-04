@@ -11,6 +11,18 @@
 
 export const PII_FIELDS = new Set(['whatsapp_number', 'sender_number', 'escort_mobile', 'phone']);
 
+// Fields that aren't themselves a phone number but are known free text a
+// sender can type a phone number into — found live 2026-08-04 checking
+// /messages: sender_number was correctly masked but message_body's own
+// text still carried a raw number the sender had typed ("নগদ পার্সোনাল :
+// 01339620136"). Field-name masking (PII_FIELDS) can't catch this — these
+// fields get scanned for embedded phone-shaped substrings instead.
+export const TEXT_SCAN_FIELDS = new Set(['message_body']);
+
+// Matches a BD phone number shape embedded anywhere in a larger string —
+// same pattern as fazle-mcp/audit_tools.py's _PHONE_RE, kept identical.
+const PHONE_IN_TEXT_RE = /(?:\+?880|0)1[0-9]{9}\b/g;
+
 // Keeps a leading country/trunk prefix + the last 4 digits, masks the rest.
 // "01712345678" -> "0XXXXXXX5678", "+8801712345678" -> "+880XXXXXXX5678".
 // Non-string/short/empty input passes through unchanged rather than
@@ -32,18 +44,35 @@ export function maskPhone(raw) {
   return prefix + 'X'.repeat(middleLen) + last4;
 }
 
+// Masks any phone-shaped substring found within a larger block of free
+// text, leaving the rest of the text untouched. Unlike maskPhone (which
+// treats the whole field as a phone number), this is for fields where a
+// phone number might just be *mentioned* inside other content.
+export function maskPhonesInText(text) {
+  if (typeof text !== 'string') return text;
+  return text.replace(PHONE_IN_TEXT_RE, (match) => maskPhone(match));
+}
+
 // Recursively masks known PII fields in an object/array. No-op when
 // isAdmin is true (admins always see the full value, per policy). `fields`
-// defaults to PII_FIELDS but can be narrowed/widened per call site.
-export function maskPiiInObject(value, { isAdmin = false, fields = PII_FIELDS } = {}) {
+// defaults to PII_FIELDS but can be narrowed/widened per call site;
+// `textFields` (default TEXT_SCAN_FIELDS) get scanned for embedded phone
+// numbers rather than fully masked.
+export function maskPiiInObject(value, { isAdmin = false, fields = PII_FIELDS, textFields = TEXT_SCAN_FIELDS } = {}) {
   if (isAdmin) return value;
   if (Array.isArray(value)) {
-    return value.map((item) => maskPiiInObject(item, { isAdmin, fields }));
+    return value.map((item) => maskPiiInObject(item, { isAdmin, fields, textFields }));
   }
   if (value && typeof value === 'object') {
     const out = {};
     for (const [key, val] of Object.entries(value)) {
-      out[key] = fields.has(key) && typeof val === 'string' ? maskPhone(val) : maskPiiInObject(val, { isAdmin, fields });
+      if (fields.has(key) && typeof val === 'string') {
+        out[key] = maskPhone(val);
+      } else if (textFields.has(key) && typeof val === 'string') {
+        out[key] = maskPhonesInText(val);
+      } else {
+        out[key] = maskPiiInObject(val, { isAdmin, fields, textFields });
+      }
     }
     return out;
   }

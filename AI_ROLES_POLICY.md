@@ -55,8 +55,21 @@ inventing a parallel approval-file mechanism from scratch for Hermes.
    list** (`fazleToolDefinitions` in `chat.js`) — this session's task scope
    was specifically Hermes; extending it to Chat too is a small, separate
    follow-up if wanted. WhatsApp reply-audit trace and "runtime status"
-   specifically were not built (out of this session's scope). 27 tests,
-   all passing.
+   specifically were not built (out of this session's scope). 30 tests,
+   all passing. **RUNTIME VERIFIED, 2026-08-04 (later same day)** against
+   the real filesystem/git repos/logs, not mocks — found and fixed two real
+   bugs in the process: (1) `audit_search_logs`'s `backend`/`hermes-runner`
+   entries pointed at file paths that don't exist (`assistant-backend` logs
+   via Docker's own driver, no host file; `hermes-runner.service` has no
+   `StandardError=` file redirect — a stale server.py comment claimed
+   otherwise, real source is the systemd journal) — now dispatches to
+   `docker compose logs` / `journalctl --user` respectively, verified live
+   returning real log lines from both; (2) `audit_search_code` surfaced
+   noise from an auto-generated `tests/coverage_html/` directory (a real
+   HTML coverage dump, thousands of lines) — added to `EXCLUDE_DIRS`,
+   re-verified the same search comes back clean. Path-traversal and
+   secrets-denylist protections both confirmed live refusing real attempts
+   (`.env`, `../../../etc/passwd`).
 2. ~~Hermes control plane~~ **Done (2026-08-03)** — mode system + approval
    file, see the role matrix row above. ~~Remaining gap: no TTL/auto-revert~~
    **TTL/auto-revert done 2026-08-04**, see below. Still no stop/pause/
@@ -123,13 +136,18 @@ admin and non-admin account, no password reset needed): admin got
 `8801893037242` unmasked on `/contacts`; the same row masked to
 `880XXXXXX7242` for non-admin. Verified across all 4 fixed routes
 (`/contacts`, `/recruitment-leads`, `/messages`, `/escort-programs`).
-**Known residual gap, found during this live check, not in original
-scope:** `/messages`' `message_body` field is free text and can itself
-contain a phone number the sender typed (seen live: a real inbound message
-body containing a raw number even though `sender_number` was correctly
-masked). Structured-field masking doesn't reach into free text — flagging
-honestly rather than overclaiming "no PII leaks," this would need a
-separate text-scanning pass if ever wanted.
+**Residual gap CLOSED, 2026-08-04 (later same day):** the free-text gap
+above is fixed. `maskPiiInObject`/`mask_pii` now also accept `textFields`
+(default `TEXT_SCAN_FIELDS = {'message_body'}`) — fields scanned for an
+embedded phone-shaped substring (`PHONE_IN_TEXT_RE`/`_PHONE_IN_TEXT_RE`,
+identical pattern in both `piiMask.js` and `pii_mask.py`) and masked in
+place, rather than the whole field being masked. **RUNTIME VERIFIED**
+against the exact real row that first surfaced the gap: `message_body`
+went from `"...নগদ পার্সোনাল : 01339620136"` to `"...নগদ পার্সোনাল :
+0XXXXXX0136"`, surrounding text untouched, `sender_number` still correctly
+masked. 9 new regression tests (`backend/tests/piiMask.test.js`,
+`fazle-mcp/tests/test_pii_mask.py`) — 36 + 88 total across the two suites,
+all passing.
 
 **Mode TTL / auto-revert — DONE, 2026-08-04** (closes the "Next steps" item
 below): `hermes-runner/server.py`'s mode file now supports an optional

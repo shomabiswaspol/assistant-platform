@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { maskPhone, maskPiiInObject, PII_FIELDS } from '../src/lib/piiMask.js';
+import { maskPhone, maskPhonesInText, maskPiiInObject, PII_FIELDS, TEXT_SCAN_FIELDS } from '../src/lib/piiMask.js';
 
 describe('maskPhone', () => {
   test('masks a local 0-prefixed BD number, keeping prefix + last 4', () => {
@@ -86,5 +86,65 @@ describe('maskPiiInObject', () => {
     for (const f of ['whatsapp_number', 'sender_number', 'escort_mobile', 'phone']) {
       assert.ok(PII_FIELDS.has(f), `expected PII_FIELDS to include ${f}`);
     }
+  });
+
+  test('masks a phone number embedded in message_body free text (live-found gap, 2026-08-04)', () => {
+    const row = {
+      sender_number: '01712345678',
+      message_body: 'নগদ পার্সোনাল : 01339620136',
+    };
+    const result = maskPiiInObject(row, { isAdmin: false });
+    assert.ok(result.sender_number.includes('X'));
+    assert.ok(!result.message_body.includes('01339620136'));
+    assert.ok(result.message_body.includes('X'));
+    // surrounding text must survive untouched
+    assert.ok(result.message_body.startsWith('নগদ পার্সোনাল'));
+  });
+
+  test('message_body with no phone number is left untouched', () => {
+    const row = { message_body: 'ভাই কেমন আছেন?' };
+    const result = maskPiiInObject(row, { isAdmin: false });
+    assert.equal(result.message_body, 'ভাই কেমন আছেন?');
+  });
+
+  test('admin sees message_body unmasked', () => {
+    const row = { message_body: 'call me at 01712345678' };
+    const result = maskPiiInObject(row, { isAdmin: true });
+    assert.equal(result.message_body, 'call me at 01712345678');
+  });
+
+  test('TEXT_SCAN_FIELDS includes message_body', () => {
+    assert.ok(TEXT_SCAN_FIELDS.has('message_body'));
+  });
+});
+
+describe('maskPhonesInText', () => {
+  test('masks a single embedded phone number', () => {
+    const result = maskPhonesInText('reach me at 01712345678 anytime');
+    assert.ok(!result.includes('01712345678'));
+    assert.ok(result.includes('X'));
+    assert.ok(result.startsWith('reach me at'));
+    assert.ok(result.endsWith('anytime'));
+  });
+
+  test('masks multiple embedded phone numbers', () => {
+    const result = maskPhonesInText('call 01712345678 or 01898765432');
+    assert.ok(!result.includes('01712345678'));
+    assert.ok(!result.includes('01898765432'));
+  });
+
+  test('leaves text with no phone number unchanged', () => {
+    assert.equal(maskPhonesInText('no numbers here'), 'no numbers here');
+  });
+
+  test('non-string input passes through unchanged', () => {
+    assert.equal(maskPhonesInText(null), null);
+    assert.equal(maskPhonesInText(42), 42);
+  });
+
+  test('masks a +880-prefixed number embedded in text', () => {
+    const result = maskPhonesInText('my number is +8801712345678 ok');
+    assert.ok(!result.includes('1712345678'));
+    assert.ok(result.includes('+880'));
   });
 });
