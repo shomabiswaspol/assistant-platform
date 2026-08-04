@@ -259,8 +259,79 @@ autonomy to allow (constant supervision vs. checkpoint-only).
 
 ## 5. Phase 5 — Watch/monitor (proactive, not just on-demand)
 
-**Goal:** Hermes doesn't just answer monitoring questions when asked — it
-periodically checks defined things and flags anomalies unprompted.
+**Phase 5A (Detect → Investigate → Report, on-demand pull) — IMPLEMENTED,
+TESTED, RUNTIME VERIFIED, 2026-08-04.** Followed immediately by a real
+production incident resolution using the exact `Detect → Investigate →
+Propose Fix → Confirm → Build → Test → Deploy → Verify → Report` lifecycle
+(Owner's "Phase D"), on the real `daily_admin_digest` bug Phase 5A itself
+found: two distinct bugs in `fazle-core`'s `modules/reports/__init__.py`
+(a `payment_method`/`payout_method` schema mismatch affecting two report
+builders, plus a stale `transaction_type` field left over from an
+incomplete 2026-07-10 migration, affecting one) — full KB-first
+investigation (live schema checks, KB cross-reference, git history,
+all-consumers search), two separate Owner-confirmed proposals, real
+Hermes BUILD-mode execution for both (independently verified on disk each
+time), real tests against real data, Owner-run `scripts/restart_gate.sh
+--restart` deploy, and a real post-deploy trigger confirming
+`daily_admin_digest` flipped from `error` to `ok` and the actual WhatsApp
+digest sent to both admins — the first time since 2026-07-10. Both fixes
+committed to fazle-core (`14addb7`, plus the earlier `payout_method`
+round), not pushed. Owner-approved staged rollout for 5A itself:
+5A now (this), stage 2 (propose-fix + approval) and stage 3
+(fix→verify→report) explicitly deferred to separate future phases — see
+`HERMES_PHASE5_PROACTIVE_MONITORING_PROMPT_20260804.md` for the full
+design. Built option (b) below exactly as recommended, on-demand-pull
+variant (§1(a) of that doc) — zero new fazle-core code, reads the
+existing `GET /scheduler/status`.
+
+- `fazle-mcp/monitoring_tools.py`: `get_monitoring_status()` (per-job
+  ok/alerting/stale/never_run against the 6 already-alerting jobs) and
+  `get_monitoring_report()` (composes status + bounded audit-toolkit
+  evidence-gathering + `report_schema.build_report()` into one
+  deterministic report). Both registered in the always-available toolset
+  — no mode gate needed (read-only), confirmed live (see below, ran
+  successfully in READ mode).
+- **Explicitly does not hallucinate**: when a job is alerting with no
+  `last_error` text and no matching log lines, the report says
+  "insufficient evidence to determine root cause" instead of guessing —
+  this is a hard code path (empty evidence list → that literal message),
+  not a prompt-level hope. Structurally cannot duplicate an existing
+  WhatsApp alert — the module only ever calls `fazle_core_client.get`
+  and read-only audit-toolkit functions, never `.post` or anything
+  send-capable; verified both by a dedicated unit test asserting
+  `core.post` is never called, and by inspection.
+- 15 new tests (`fazle-mcp/tests/test_monitoring_tools.py`) covering all
+  4 Owner-specified cases (all-healthy, one failed job with real
+  evidence, unknown failure with no evidence, never-sends-anything) plus
+  stale/never-run/scheduler-disabled/multi-issue/unreachable cases. Total
+  fazle-mcp suite: 108 tests, all passing.
+- **Real bug found live while verifying, not simulated**: `daily_admin_digest`
+  was genuinely alerting in production — `KeyError: 'payment_method'` in
+  `modules/reports/__init__.py`'s `_b_daily_summary` report builder
+  (2026-08-03 08:00 UTC). The tool correctly detected it, and while
+  investigating the tool's own evidence quality, found and fixed a real
+  gap: `audit_search_logs` only returned a single bare grep line for a
+  multi-line traceback, missing the actual exception below it — added an
+  optional `context_lines` parameter (file-source only, bounded, capped
+  at 30) so evidence now includes the full traceback down to the real
+  `KeyError`. Not fixed: the `daily_admin_digest` bug itself — correctly
+  out of scope for Detect→Investigate→**Report** (no auto-fix). Reported
+  to the Owner as a real, live, actionable finding.
+- **Real Hermes conversation trial** (not simulated, via `hermes-runner`'s
+  actual `/run` endpoint): asked Hermes to "check system alerts," it
+  called `get_monitoring_report()` for real, correctly summarized the
+  `daily_admin_digest` finding with risk assessment, and — critically —
+  **stopped and asked before doing anything further** ("Want me to dig
+  into the code (read-only) to pin down the cause?") rather than
+  investigating further or attempting a fix unprompted. Ran entirely in
+  READ mode, confirming the no-mode-gate design was correct.
+
+**Goal (original, still accurate for Phase 5B+):** Hermes doesn't just
+answer monitoring questions when asked — it periodically checks defined
+things and flags anomalies unprompted. **Phase 5A above deliberately does
+not do this** — it's reactive/on-demand only, per the Owner's own staged
+roadmap. A true always-on/scheduled trigger remains a distinct, deferred,
+separately-approved future phase (option (a) below), not built.
 
 **This is architecturally different from everything above** — it requires
 a *scheduled* trigger (Hermes doesn't run continuously; `hermes-runner`
@@ -300,6 +371,20 @@ LLM-cost budget is acceptable.
 **This is the "Jarvis via bridge3" idea from earlier this session,
 explicitly deferred — this phase does not un-defer it. It's documented
 here so the plan is complete, not as a green light.**
+
+**Status note, 2026-08-04 (fazle-core-side, cross-referenced here for
+consistency):** later the same day this doc was written, a separate
+fazle-core session did un-defer a narrow slice of this (bridge3 recognized
+as an Admin identity, `AI <question>` reachable via bridge3) — then
+reversed it again the same day after a real cross-bridge message-loop
+incident. Bridge3 is confirmed, as of now, **not** an Admin identity in
+fazle-core — bridge2 (8801880446111) is the canonical Super Admin. This
+doc's own framing above (bridge3 wrapper "doesn't exist," still deferred)
+is accurate again as the current state. See fazle-core's
+`knowledge_base/00_governance/management_decisions.md` ("Bridge3 Admin
+Reversal + Bridge2 Super Admin + CSV Contact-Book Rebuild") for the full
+record — this assistant-platform doc was not otherwise rewritten to match,
+this note is a pointer, not a full sync.
 
 **What "reply to Admin, reply to others as Admin's permission" would
 require, concretely:**
