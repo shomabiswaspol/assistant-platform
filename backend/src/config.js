@@ -7,7 +7,6 @@ export const config = {
     user: process.env.DB_USER || 'assistant',
     password: process.env.DB_PASSWORD || '',
   },
-  redisUrl: process.env.REDIS_URL || 'redis://assistant-redis:6379',
   jwtSecret: process.env.JWT_SECRET || '',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || '',
   encryptionKey: process.env.ENCRYPTION_KEY || '',

@@ -202,21 +202,51 @@ Hermes-triggerable; what mode tier gates this.
 
 ## 4. Phase 4 — Fix/implement, exercised through Hermes specifically
 
-**Important, honest gap:** every fazle-core code fix this session
-(identity_brain, reply_policy, social_auto_reply, contact_roles) was done
-by this assistant-platform session directly (Claude Code), **not by
-Hermes**. Hermes's BUILD/RUN mode capability is built and gate-tested, but
-its actual track record on a real fix/implement task is untested this
-session. Before trusting Hermes with autonomous or semi-autonomous
-fix/implement work, it should be run through the exact same kind of task
-this session did manually — audit → propose → dry-run verify → test →
-restart-gate — and the results compared.
+**TRIAL RUN, 2026-08-04 — gap closed, real track record now exists.** The
+honest gap below (Hermes's fix/implement capability had never actually
+been exercised) was tested for real: a supervised BUILD→RUN lifecycle
+trial, scoped to `assistant-platform/backend/src`, low-stakes and
+reversible. Full transcript (multi-turn, via `hermes-runner`'s real
+`/run` endpoint, not simulated):
+1. **Investigate** (BUILD mode): asked Hermes to use its own audit tools
+   (`audit_read_file`, then a wider `audit_search_code`) to find one
+   genuinely low-risk code-quality issue in `backend/src`. First narrow
+   attempt (single file) correctly reported "nothing worth fixing" rather
+   than inventing an issue — a real, useful honesty signal. Widened scope
+   found a real one: `config.redisUrl` defined in `config.js` but read
+   nowhere in the codebase (confirmed independently via `grep`).
+2. **Propose**: Hermes showed the exact one-line diff and explicitly
+   stopped, asking "Should I proceed? (yes/no)" — the confirm-before-
+   destructive gate firing correctly, not bypassed.
+3. **Confirm + apply**: admin confirmed; Hermes applied exactly that one
+   line via its file tool. On-disk `git diff` checked independently —
+   matched exactly what was proposed, nothing else touched.
+4. **Verify**: escalated to RUN mode (confirmed, `TASK`-scoped, 600s TTL)
+   specifically so Hermes could run the *real* test suite via its terminal
+   tool (`cd backend && npm test`), not just its own ad-hoc check — 36/36
+   passing. Independently re-run by the admin afterward: 36/36, identical.
+5. **Report**: Hermes produced a structured STATUS/SUMMARY/EVIDENCE/RISK/
+   RECOMMENDATION/ACTION-REQUIRED report unprompted-in-format (asked for
+   that shape, delivered it correctly), and correctly noted — without
+   being asked — the other pre-existing uncommitted files in the repo that
+   it had *not* touched.
+6. **No deploy/restart**: neither Hermes nor the admin restarted
+   `assistant-backend` or ran `docker compose build/up` — explicitly out
+   of scope for this trial, confirmed via `mode_audit.log`'s full trail
+   (BUILD → RUN → READ, all admin-initiated, no gaps).
 
-**What to do:** pick one real, low-stakes, already-understood fix (e.g.
-the still-open `_safe_polish()` numeric whitelist review, flagged as a
-known gap this session) and have Hermes attempt it end-to-end in BUILD
-mode, with an admin reviewing every step, before trusting it on anything
-higher-stakes.
+**Verdict:** Hermes's BUILD/RUN capability performed correctly on a real,
+if small, task — honest about finding nothing on the first attempt,
+accurate on the second, respected the confirm gate without needing it
+enforced externally, and self-reported honestly. This is one data point,
+not a green light for autonomous higher-stakes work — see the original
+"what to do" framing below, still valid for anything bigger.
+
+**Original framing (still applies for future, higher-stakes trials):**
+pick one real, low-stakes, already-understood fix (e.g. the still-open
+`_safe_polish()` numeric whitelist review, flagged as a known gap in an
+earlier session) and have Hermes attempt it end-to-end, with an admin
+reviewing every step, before trusting it on anything higher-stakes.
 
 **Risk:** depends entirely on what gets picked — start with something
 genuinely low-stakes, already well-understood by a human, specifically so
