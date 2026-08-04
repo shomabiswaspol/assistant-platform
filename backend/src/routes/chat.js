@@ -7,6 +7,10 @@ import { decryptSecret } from '../utils/encryption.js';
 // --- Tool-calling: fazle-core DB reads + web search (see ../tools/) ---
 import { fazleToolDefinitions, executeFazleTool } from '../tools/fazleTools.js';
 import { searchToolDefinitions, executeSearchTool } from '../tools/searchTools.js';
+// Chat audit toolkit (2026-08-04, Owner-approved — see
+// proposal_chat_audit_toolkit_20260804.md): admin-only, see isAdmin gating
+// below and in ../tools/auditTools.js's module docstring.
+import { auditToolDefinitions, executeAuditTool, isAuditTool } from '../tools/auditTools.js';
 
 const router = Router();
 router.use(requireAuth, requireApproved);
@@ -47,7 +51,23 @@ function estimateTokens(text) {
 }
 
 // --- Tool-calling: fazle DB tools + web search, combined for the model ---
-const allTools = [...fazleToolDefinitions, ...searchToolDefinitions];
+const baseTools = [...fazleToolDefinitions, ...searchToolDefinitions];
+
+// Staged rollout for the audit toolkit — off by default per the approved
+// proposal; an explicit env flag flip (+ container restart) is required
+// before it's live, even for admins. This is IN ADDITION TO the isAdmin
+// gate below, not instead of it — both must hold for an audit tool to ever
+// reach the model or actually execute.
+const CHAT_AUDIT_TOOLS_ENABLED = process.env.CHAT_AUDIT_TOOLS_ENABLED === 'true';
+const adminTools = CHAT_AUDIT_TOOLS_ENABLED ? [...baseTools, ...auditToolDefinitions] : baseTools;
+
+// The full tool list for a given caller — admin callers additionally get
+// the read-only audit toolkit (source/docs/kb/log search, file read, git
+// status/log), gated the same way piiMask.js gates PII fields: an app-side
+// isAdmin check, not something the downstream service enforces on its own.
+function toolsFor({ isAdmin }) {
+  return isAdmin ? adminTools : baseTools;
+}
 
 // Pin to a model confirmed to handle tool_calls correctly.
 // OmniRoute auto may route to models that leak raw tool syntax.
@@ -73,6 +93,16 @@ async function executeToolCall(toolCall, { isAdmin = false } = {}) {
     return { error: 'invalid tool arguments' };
   }
   if (name === 'web_search') return executeSearchTool(args);
+  if (isAuditTool(name)) {
+    // Defense in depth, mirroring toolsFor()'s list-visibility gate above:
+    // even if a tool_call with an audit tool name somehow reaches here for
+    // a non-admin caller (it shouldn't — the model was never offered these
+    // tools), execution itself refuses without isAdmin, same as the flag.
+    if (!isAdmin || !CHAT_AUDIT_TOOLS_ENABLED) {
+      return { error: 'audit tools are admin-only' };
+    }
+    return executeAuditTool(name, args);
+  }
   return executeFazleTool(name, args, { isAdmin });
 }
 
@@ -91,6 +121,7 @@ async function executeToolCall(toolCall, { isAdmin = false } = {}) {
 // this endpoint actually has (no destructive/write tools here, so no
 // confirm-before-acting clause is claimed).
 function buildSystemPrompt({ isAdmin }) {
+  const auditToolsLive = isAdmin && CHAT_AUDIT_TOOLS_ENABLED;
   return (
     'You are Hermes, the internal AI assistant for Al-Rifa\'i Integrated ' +
     'Services (also referred to as "fazle-core" or "the backend" -- these ' +
@@ -102,19 +133,26 @@ function buildSystemPrompt({ isAdmin }) {
     '. You have read-only tools available for fazle-core data (contacts, ' +
     'employees, messages, knowledge base, attendance, billing, cash ' +
     'transactions, escort programs, payroll, recruitment) and web search -- ' +
-    'use them when a question needs real data instead of guessing. If you ' +
-    'do not have a tool for what is being asked, say so honestly rather ' +
-    'than inventing an answer.'
+    'use them when a question needs real data instead of guessing.' +
+    (auditToolsLive
+      ? ' As the Admin, you also have a read-only audit toolkit: source ' +
+        'code and documentation search, knowledge-base search, log search, ' +
+        'reading a specific file, and git status/history for the ' +
+        'assistant-platform and fazle-core repos -- use these for ' +
+        'engineering/ops questions about the system itself.'
+      : '') +
+    ' If you do not have a tool for what is being asked, say so honestly ' +
+    'rather than inventing an answer.'
   );
 }
 
 // One place that calls OmniRoute's /chat/completions, optionally with the
 // tool definitions attached. Shared by the initial request, the no-tools
 // fallback retry, and the post-tool-call follow-up.
-async function callOmniRoute(messages, { model, includeTools }) {
+async function callOmniRoute(messages, { model, includeTools, tools }) {
   const body = { model: model || 'auto', messages, stream: false };
   if (includeTools) {
-    body.tools = allTools;
+    body.tools = tools || baseTools;
     body.tool_choice = 'auto';
   }
   return fetch(`${config.omnirouteUrl}/chat/completions`, {
@@ -272,10 +310,11 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata, is
   // query with no matching tool at all, this can fail two attempts in a
   // row, not just one — so retry up to TOOL_CALL_ATTEMPTS times before
   // giving up on tools.
+  const tools = toolsFor({ isAdmin });
   const TOOL_CALL_ATTEMPTS = 3;
   let upstream;
   for (let attempt = 1; attempt <= TOOL_CALL_ATTEMPTS; attempt++) {
-    upstream = await callOmniRoute(messages, { model: TOOL_CAPABLE_MODEL, includeTools: true });
+    upstream = await callOmniRoute(messages, { model: TOOL_CAPABLE_MODEL, includeTools: true, tools });
     if (upstream.ok) break;
     // eslint-disable-next-line no-console
     console.warn(`chat: tool-enabled completion failed (status ${upstream.status}), attempt ${attempt}/${TOOL_CALL_ATTEMPTS}`);
