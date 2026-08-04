@@ -76,6 +76,38 @@ async function executeToolCall(toolCall, { isAdmin = false } = {}) {
   return executeFazleTool(name, args, { isAdmin });
 }
 
+// Owner decision 2026-08-04: identity/backend-grounding fix for two real
+// observed failures -- (A) "who am I?" got a generic "I'm just an AI, I
+// don't know you" answer, (B) "can you get data from Al-Rifa'i's backend?"
+// hallucinated an unrelated real-world company, because "Al-Rifa'i
+// Integrated Services" is fazle-core's own configured company name
+// (app/config.py's company_name) and nothing here ever told the model
+// that. Every route on this router already requires requireAuth +
+// requireApproved (see router.use(...) above), so req.user is always a
+// real authenticated, approved user -- safe to describe in the prompt.
+// Mirrors the existing SYSTEM_PREAMBLE/PERSONAS pattern in
+// ~/hermes-runner/server.py (the separate admin-only Hermes CLI page)
+// rather than inventing a new grounding mechanism; scoped down to what
+// this endpoint actually has (no destructive/write tools here, so no
+// confirm-before-acting clause is claimed).
+function buildSystemPrompt({ isAdmin }) {
+  return (
+    'You are Hermes, the internal AI assistant for Al-Rifa\'i Integrated ' +
+    'Services (also referred to as "fazle-core" or "the backend" -- these ' +
+    'all refer to this same company\'s own connected system, not an ' +
+    'external company; never answer a question about "Al-Rifa\'i" or ' +
+    '"the backend"/"fazle-core" using general world knowledge about an ' +
+    'unrelated company). You are speaking with ' +
+    (isAdmin ? 'the Admin/Owner of this system' : 'an authorized, approved user of this system') +
+    '. You have read-only tools available for fazle-core data (contacts, ' +
+    'employees, messages, knowledge base, attendance, billing, cash ' +
+    'transactions, escort programs, payroll, recruitment) and web search -- ' +
+    'use them when a question needs real data instead of guessing. If you ' +
+    'do not have a tool for what is being asked, say so honestly rather ' +
+    'than inventing an answer.'
+  );
+}
+
 // One place that calls OmniRoute's /chat/completions, optionally with the
 // tool definitions attached. Shared by the initial request, the no-tools
 // fallback retry, and the post-tool-call follow-up.
@@ -202,13 +234,30 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata, is
     sessionId = rows[0].id;
   }
 
+  // Owner decision 2026-08-04: load prior turns for this session BEFORE
+  // inserting the current message below, so multi-turn context (e.g. "ওর
+  // absent কত?" referring back to an employee named a message earlier)
+  // actually works -- previously every turn was a stateless single-message
+  // call despite chat_messages already storing full history for the UI.
+  // Bounded to the last 20 messages to keep prompt size reasonable.
+  const { rows: historyRows } = await pool.query(
+    `SELECT role, content FROM chat_messages
+      WHERE session_id = $1 AND role IN ('user', 'assistant')
+      ORDER BY created_at ASC LIMIT 20`,
+    [sessionId]
+  );
+
   await pool.query(
     `INSERT INTO chat_messages (session_id, role, content, tokens_input, metadata) VALUES ($1, 'user', $2, $3, $4)`,
     [sessionId, message, estimateTokens(message), metadata ? JSON.stringify(metadata) : null]
   );
 
   // --- Tool-calling: give the model fazle-DB + web-search tools ---
-  const messages = [{ role: 'user', content: message }];
+  const messages = [
+    { role: 'system', content: buildSystemPrompt({ isAdmin }) },
+    ...historyRows.map((r) => ({ role: r.role, content: r.content })),
+    { role: 'user', content: message },
+  ];
 
   // Groq's Llama-3.3 tool-calling occasionally generates malformed
   // function-call tokens on its own (confirmed live: a 400 "tool_use_failed"
