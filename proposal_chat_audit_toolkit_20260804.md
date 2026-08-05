@@ -1,10 +1,10 @@
 # Proposal: Chat Audit Toolkit Wiring
 
-**Date:** 2026-08-04 · **Status: APPROVED & IMPLEMENTED (design amended during build) — code done, not yet deployed.**
+**Date:** 2026-08-04 · **Status: DEPLOYED & VERIFIED LIVE.**
 **Author:** Claude (assistant-platform), during a review of the "Priority 1" queue item "Chat audit toolkit wiring"
 **Follows:** fazle-core's KB-First Policy — 6-part structure, stop for management approval before any production change.
 
-**Owner approval:** "Approve as designed — admin-gated (isAdmin-only) port of the 7 read-only audit tools into Chat's tool list" (2026-08-04).
+**Owner approval:** "Approve as designed — admin-gated (isAdmin-only) port of the 7 read-only audit tools into Chat's tool list" (2026-08-04). Deployment explicitly instructed same day: "now push, restart and deploy, make CHAT_AUDIT_TOOLS_ENABLED=true, rebuild the container."
 
 **Design amendment found during implementation, before any code was written
 against the original plan:** §4 as originally proposed ("port
@@ -18,16 +18,28 @@ runs on the bare host and already has an authenticated channel to
 assistant-backend) before implementation proceeded — see the amended §4
 below for what was actually built.
 
+**Deployment addendum (2026-08-04, same day):** live and verified.
+- `hermes-runner@233cf80` and `assistant-platform@373882a` both pushed to
+  their remotes.
+- `hermes-runner.service` restarted (new PID confirmed).
+- `assistant-backend` rebuilt and recreated (`docker compose up -d --build`).
+- `CHAT_AUDIT_TOOLS_ENABLED=true` set in `backend/.env`, confirmed loaded
+  inside the running container.
+- Live authenticated `POST /audit` call against the real running
+  hermes-runner returned real `git status` output for fazle-core — the
+  full chain (Chat → hermes-runner → host filesystem/git) confirmed
+  working end-to-end in production, not just in tests.
+- Full record of this deployment step also in fazle-core's
+  `knowledge_base/00_governance/management_decisions.md` → "Priority 1
+  Rollout" entry (2026-08-04), which covers this alongside the other two
+  Priority 1 items deployed the same session.
+
 **What's done:** all code (host-side Python port + HTTP route on
 hermes-runner, Node HTTP client + admin-gated wiring in Chat), all tests
 (13 new hermes-runner tests, 9 new assistant-platform tests, 95 total tests
-across both repos passing, zero regressions), and a live end-to-end smoke
-test against a real hermes-runner instance (real grep/git/file-read results,
-real `.env`-path denial, real 401 without auth). **Not done:**
-`CHAT_AUDIT_TOOLS_ENABLED` is off by default (staged rollout, per §4) and
-neither hermes-runner nor the assistant-backend container has been restarted
-to pick up the change — both are explicitly left for the Owner, per this
-project's restart-is-manual convention.
+across both repos passing, zero regressions), a pre-deploy end-to-end smoke
+test against a throwaway hermes-runner instance, and the live production
+verification above. Nothing outstanding on this item.
 
 ---
 
