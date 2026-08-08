@@ -24,6 +24,13 @@ function RequireAuth({ children }) {
   return children;
 }
 
+function RequireAdmin({ children }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'admin') return <Navigate to="/chat" replace />;
+  return children;
+}
+
 // FIX 2: sidebar open/collapse state lives here — one level above the
 // sidebar itself — so the toggle button stays reachable even when the
 // sidebar is collapsed on desktop or closed on mobile.
@@ -78,7 +85,7 @@ export default function App() {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
             <Route path="/opencode" element={<RequireAuth><OpenCodePage /></RequireAuth>} />
-            <Route path="/hermes" element={<RequireAuth><HermesPage /></RequireAuth>} />
+            <Route path="/hermes" element={<RequireAdmin><HermesPage /></RequireAdmin>} />
             <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
             <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
             <Route path="/usage" element={<RequireAuth><UsagePage /></RequireAuth>} />
