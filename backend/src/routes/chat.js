@@ -261,6 +261,32 @@ router.get('/sessions/:id/messages', async (req, res) => {
   res.json(rows);
 });
 
+// Rename/delete a conversation — owner-scoped (user_id = req.user.sub), same
+// ownership pattern as the two routes above. Added for the sidebar's
+// per-conversation menu (UI redesign 2026-08-09); chat_messages cascades on
+// delete via its FK (migrations/001_init.sql), so no separate cleanup query
+// is needed here.
+router.patch('/sessions/:id', async (req, res) => {
+  const { title } = req.body || {};
+  const trimmed = (title || '').trim();
+  if (!trimmed) return res.status(400).json({ error: 'title required' });
+  const { rows } = await pool.query(
+    `UPDATE chat_sessions SET title = $1 WHERE id = $2 AND user_id = $3 RETURNING id, title`,
+    [trimmed.slice(0, 200), req.params.id, req.user.sub]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'session not found' });
+  res.json(rows[0]);
+});
+
+router.delete('/sessions/:id', async (req, res) => {
+  const { rowCount } = await pool.query(
+    `DELETE FROM chat_sessions WHERE id = $1 AND user_id = $2`,
+    [req.params.id, req.user.sub]
+  );
+  if (!rowCount) return res.status(404).json({ error: 'session not found' });
+  res.json({ ok: true });
+});
+
 // Shared by /send and /send-audio (a transcribed voice note is just text by
 // the time it gets here) — one place that talks to OmniRoute and persists.
 async function sendTextMessage({ userId, sessionId, message, model, metadata, isAdmin = false }) {

@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { Bot, User, Copy, Check } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import clsx from 'clsx';
 
 // rehype-highlight bundles ALL highlight.js languages by default (~500kB).
@@ -39,6 +39,64 @@ function CopyButton({ text }) {
   );
 }
 
+function extractLanguage(className) {
+  const match = /language-(\w+)/.exec(className || '');
+  return match ? match[1] : null;
+}
+
+// UI redesign (2026-08-09): per-code-block language label + copy button
+// (previously there was only one copy button for the whole message).
+// Overrides react-markdown's <pre> rendering — rehype-highlight puts the
+// `language-xxx` class on the inner <code>, so we read it off the first
+// child rather than the <pre> node itself. Code blocks keep a fixed dark
+// chrome regardless of app theme (same convention as ChatGPT/VS
+// Code/GitHub) — swapping highlight.js's theme with the app's light/dark
+// toggle would need a second, hand-scoped stylesheet with no easy way to
+// visually verify it in this environment, so left as-is deliberately.
+function CodeBlock({ children, ...props }) {
+  const [copied, setCopied] = useState(false);
+  const preRef = useRef(null);
+  const codeElement = Array.isArray(children) ? children[0] : children;
+  const language = extractLanguage(codeElement?.props?.className);
+
+  function copy() {
+    const text = preRef.current?.textContent || '';
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <div className="my-2 overflow-hidden rounded-lg border border-slate-700/50">
+      <div className="flex items-center justify-between bg-slate-800 px-3 py-1.5 text-[11px] text-slate-400">
+        <span className="font-mono">{language || 'text'}</span>
+        <button
+          onClick={copy}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:text-slate-100 hover:bg-slate-700/60"
+          title="Copy code"
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre ref={preRef} {...props} className="!my-0 !rounded-none overflow-x-auto p-3 text-sm">
+        {children}
+      </pre>
+    </div>
+  );
+}
+
+// Wraps GFM tables in a horizontal-scroll container — wide tables were
+// previously unconstrained and could overflow a narrow mobile bubble.
+function Table({ children, ...props }) {
+  return (
+    <div className="overflow-x-auto my-2">
+      <table {...props}>{children}</table>
+    </div>
+  );
+}
+
+const MARKDOWN_COMPONENTS = { pre: CodeBlock, table: Table };
+
 export default function MessageBubble({ role, content, provider, model, createdAt }) {
   const isUser = role === 'user';
   return (
@@ -56,8 +114,12 @@ export default function MessageBubble({ role, content, provider, model, createdA
         : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-sm')}
       >
         {!isUser && <CopyButton text={content} />}
-        <div className={clsx('md-content text-sm leading-relaxed', isUser && '[&_a]:text-white [&_code]:bg-brand-600')}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, rehypeHighlightOptions]]}>
+        <div className={clsx('md-content text-sm leading-relaxed break-words', isUser && '[&_a]:text-white [&_code]:bg-brand-600')}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[[rehypeHighlight, rehypeHighlightOptions]]}
+            components={MARKDOWN_COMPONENTS}
+          >
             {content}
           </ReactMarkdown>
         </div>

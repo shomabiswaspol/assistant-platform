@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Globe } from 'lucide-react';
+import clsx from 'clsx';
 import { api } from '../services/api.js';
 import { useChatSessions } from '../context/ChatSessionsContext.jsx';
 import MessageBubble from '../components/chat/MessageBubble.jsx';
 import ChatInputBar from '../components/chat/ChatInputBar.jsx';
+import ModelPicker from '../components/chat/ModelPicker.jsx';
 
 const SUGGESTIONS = [
   'Summarize what you can help me with',
@@ -19,7 +21,17 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [models, setModels] = useState(null);
+  const [model, setModel] = useState('auto');
+  const [webSearchConfigured, setWebSearchConfigured] = useState(null);
   const bottomRef = useRef(null);
+
+  // Real free/local/paid model list + web-search status — same data
+  // SettingsPage.jsx already fetches; header just surfaces it here too.
+  useEffect(() => {
+    api.models().then(setModels).catch(() => {});
+    api.omnirouteStatus().then((s) => setWebSearchConfigured(!!s.tavilyConfigured)).catch(() => {});
+  }, []);
   // Guards against re-fetching messages we already have locally right after
   // sending (applyResult sets a brand-new sessionId from the response) —
   // only fetch when the active session changed for some OTHER reason, e.g.
@@ -47,23 +59,32 @@ export default function ChatPage() {
     setError('');
   }
 
+  // Problem #5 fix (2026-08-09): messages loaded from history already carry
+  // a real createdAt (chat.js's GET /sessions/:id/messages returns
+  // cm.created_at — MessageBubble already renders it, see the `{createdAt
+  // && <span>...}` block). Freshly sent/received messages within the
+  // current session never got one, so they showed no time until the next
+  // reload. Stamping with the client clock at send/receive time uses the
+  // exact same existing display path, not a new mechanism, and gets
+  // silently replaced by the real server value next time this session's
+  // history is (re)fetched — no backend change.
   function applyResult(res, userMessage) {
     skipNextFetchRef.current = true;
     setActiveId(res.session_id);
     setMessages((m) => [
       ...m,
-      ...(userMessage ? [{ role: 'user', content: userMessage }] : []),
-      { role: 'assistant', content: res.reply, provider: res.provider, model: res.model },
+      ...(userMessage ? [{ role: 'user', content: userMessage, createdAt: new Date().toISOString() }] : []),
+      { role: 'assistant', content: res.reply, provider: res.provider, model: res.model, createdAt: new Date().toISOString() },
     ]);
     reload();
   }
 
   async function handleSend(text) {
     setError('');
-    setMessages((m) => [...m, { role: 'user', content: text }]);
+    setMessages((m) => [...m, { role: 'user', content: text, createdAt: new Date().toISOString() }]);
     setSending(true);
     try {
-      const res = await api.chatSend({ session_id: sessionId, message: text });
+      const res = await api.chatSend({ session_id: sessionId, message: text, model });
       applyResult(res, null);
     } catch (err) {
       setError(err.message);
@@ -75,7 +96,7 @@ export default function ChatPage() {
   async function handleSendImage(file) {
     setError('');
     const previewUrl = URL.createObjectURL(file);
-    setMessages((m) => [...m, { role: 'user', content: '📎 Image attached', imagePreview: previewUrl }]);
+    setMessages((m) => [...m, { role: 'user', content: '📎 Image attached', imagePreview: previewUrl, createdAt: new Date().toISOString() }]);
     setSending(true);
     try {
       const res = await api.chatSendImage(file, sessionId);
@@ -102,6 +123,28 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* Pre-deployment audit (2026-08-09), FIX 2: flex-wrap instead of a
+          rigid single row — a long selected model name plus the web-search
+          badge could get close to/over a 360px viewport's width with no
+          fallback. Wrapping to a second line beats forcing horizontal page
+          overflow; on desktop there's always room for one line so the
+          layout is unchanged there. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-slate-100 dark:border-slate-800 px-4 py-2 shrink-0">
+        <ModelPicker models={models} value={model} onChange={setModel} />
+        {webSearchConfigured !== null && (
+          <span
+            title={webSearchConfigured ? 'Web search is available for this conversation' : 'Web search is not configured'}
+            className={clsx(
+              'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium',
+              webSearchConfigured
+                ? 'text-green-700 dark:text-green-400'
+                : 'text-slate-400 dark:text-slate-500'
+            )}
+          >
+            <Globe size={13} /> Web search {webSearchConfigured ? 'on' : 'off'}
+          </span>
+        )}
+      </div>
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-4">
             {messages.length === 0 ? (

@@ -40,6 +40,9 @@ export const api = {
 
   chatSessions: () => request('/chat/sessions'),
   chatMessages: (sessionId) => request(`/chat/sessions/${sessionId}/messages`),
+  chatRenameSession: (sessionId, title) =>
+    request(`/chat/sessions/${sessionId}`, { method: 'PATCH', body: { title } }),
+  chatDeleteSession: (sessionId) => request(`/chat/sessions/${sessionId}`, { method: 'DELETE' }),
   chatSend: (payload) => request('/chat/send', { method: 'POST', body: payload }),
   chatSendAudio: (blob, sessionId) => {
     const form = new FormData();
@@ -63,6 +66,8 @@ export const api = {
 
   profile: () => request('/profile'),
   updateProfile: (payload) => request('/profile', { method: 'PATCH', body: payload }),
+  changePassword: (current_password, new_password) =>
+    request('/profile/change-password', { method: 'POST', body: { current_password, new_password } }),
 
   models: () => request('/settings/models'),
   apiKeys: () => request('/settings/api-keys'),

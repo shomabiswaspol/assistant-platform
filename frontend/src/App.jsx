@@ -12,6 +12,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx';
 import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 import ChatPage from './pages/ChatPage.jsx';
 import OpenCodePage from './pages/OpenCodePage.jsx';
+import OpenCodeCliPage from './pages/OpenCodeCliPage.jsx';
 import HermesPage from './pages/HermesPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
@@ -53,6 +54,7 @@ function Layout({ children }) {
               onClick={() => setMobileSidebarOpen(true)}
               className="lg:hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
               title="Open menu"
+              aria-label="Open menu"
             >
               <Menu size={18} />
             </button>
@@ -60,6 +62,7 @@ function Layout({ children }) {
               onClick={() => setSidebarOpen((v) => !v)}
               className="hidden lg:flex rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
               title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
             >
               {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
             </button>
@@ -85,11 +88,14 @@ export default function App() {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
             <Route path="/opencode" element={<RequireAuth><OpenCodePage /></RequireAuth>} />
+            {/* CLI terminal view over the same admin-only opencode backend —
+                RequireAdmin matches opencode.js's requireAdmin gate exactly */}
+            <Route path="/opencode/cli" element={<RequireAdmin><OpenCodeCliPage /></RequireAdmin>} />
             <Route path="/hermes" element={<RequireAdmin><HermesPage /></RequireAdmin>} />
             <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
             <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
             <Route path="/usage" element={<RequireAuth><UsagePage /></RequireAuth>} />
-            <Route path="/admin" element={<RequireAuth><AdminPage /></RequireAuth>} />
+            <Route path="/admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
             <Route path="*" element={<Navigate to="/chat" replace />} />
           </Routes>
         </Layout>
