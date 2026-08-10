@@ -11,9 +11,9 @@ router.use(requireAuth);
 // priority tiers so the UI can show them before OmniRoute itself is live) ---
 router.get('/models', (_req, res) => {
   res.json({
-    priority_1_free: ['groq/llama-3.3-70b-versatile', 'groq/llama-3.1-8b-instant', 'google/gemini-2.0-flash'],
-    priority_2_local: ['ollama/phi4-mini', 'ollama/qwen3:8b'],
-    priority_3_paid: ['moonshot/kimi-k3', 'deepseek/deepseek-chat'],
+    priority_1_free: ['groq/llama-3.3-70b-versatile', 'groq/llama-3.1-8b-instant', 'google/gemini-2.0-flash', 'xai/grok-3'],
+    priority_2_local: ['ollama/phi4-mini', 'ollama/qwen3:8b', 'ollama/hermes3:3b'],
+    priority_3_paid: ['moonshot/kimi-k3', 'deepseek/deepseek-chat', 'minimax/MiniMax-M1-80k'],
   });
 });
 
@@ -58,7 +58,7 @@ router.get('/omniroute-status', async (_req, res) => {
   const tavilyConfigured = !!process.env.TAVILY_API_KEY;
   try {
     const r = await fetch(`${config.omnirouteUrl}/models`, {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(10000),
       headers: config.omnirouteApiKey ? { Authorization: `Bearer ${config.omnirouteApiKey}` } : {},
     });
     res.json({ reachable: r.ok, status: r.status, tavilyConfigured });
