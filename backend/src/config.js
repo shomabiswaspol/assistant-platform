@@ -16,6 +16,12 @@ export const config = {
   // this container reaches it via host.docker.internal, same mechanism
   // already used for fazle-core's Postgres (extra_hosts in docker-compose.yml).
   opencodeUrl: process.env.OPENCODE_URL || 'http://host.docker.internal:8091',
+  // Hermes -> OpenCode handoff (fazle-mcp's opencode_tools.py, 2026-08-10).
+  // opencode.js's routes are requireAdmin-gated; the fazle-mcp service
+  // account (hermes-mcp-svc) is deliberately non-admin, so rather than
+  // widen that account's role wholesale, this is a separate shared-secret
+  // scoped only to OpenCode routes (see requireAdminOrHermesSvc).
+  hermesOpencodeSvcToken: process.env.HERMES_OPENCODE_SVC_TOKEN || '',
   // hermes-runner.service (host-level, invokes the real `hermes` CLI with
   // real terminal/file/code_execution access) — same nginx-proxy pattern
   // as opencodeUrl, and for the same reason (a direct bridge-gateway route

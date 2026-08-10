@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAdminOrHermesSvc } from '../middleware/auth.js';
 import { config } from '../config.js';
 
 const router = Router();
@@ -8,7 +8,12 @@ const router = Router();
 // VPS, including fazle-core, per Owner decision. Only admin controls
 // git/restart/deploy anyway, so the actual power was always meant to sit
 // with admin; this just matches the gate to the access.
-router.use(requireAuth, requireAdmin);
+//
+// 2026-08-10: requireAdminOrHermesSvc additionally accepts the Hermes ->
+// OpenCode handoff tool's dedicated shared-secret token (see auth.js) —
+// still not open to ordinary approved users, just one additional,
+// narrowly-scoped caller alongside human admins.
+router.use(requireAdminOrHermesSvc);
 
 // opencode serve (host-level systemd service, see opencode-serve.service)
 // exposes its own real REST API — this file proxies it rather than
