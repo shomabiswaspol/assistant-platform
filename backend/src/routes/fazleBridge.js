@@ -82,10 +82,16 @@ router.get('/contacts', (req, res) => {
 });
 
 router.get('/employees', (req, res) => {
+  // 2026-08-10 fix: wbom_employees.status is stored capitalized ('Active'/
+  // 'Inactive', confirmed via tests/unit fixtures in core), but this route
+  // compared against a hardcoded lowercase literal — always 0 rows,
+  // regardless of what's actually in the table. ILIKE instead of a fixed
+  // case, so this doesn't silently break again if the stored casing ever
+  // changes.
   const status = req.query.status === 'inactive' ? 'inactive' : 'active';
   return readOnlyQuery(
     res,
-    'SELECT employee_id, employee_name, designation, status FROM ai_read_employees WHERE status = $1 ORDER BY employee_name LIMIT 100',
+    'SELECT employee_id, employee_name, designation, status FROM ai_read_employees WHERE status ILIKE $1 ORDER BY employee_name LIMIT 100',
     [status]
   );
 });
