@@ -22,7 +22,15 @@ router.use(requireAdminOrHermesSvc);
 // pointed at the same OmniRoute gateway everything else in this app uses) —
 // specifying the model per-prompt was tested and silently ignored by this
 // opencode version; it only takes effect at session-creation time.
-const OMNIROUTE_MODEL = { providerID: 'omniroute', id: 'auto' };
+//
+// 2026-08-09: model id changed 'auto' -> 'groq/llama-3.3-70b-versatile'.
+// Live evidence (opencode.log 2026-08-03): SessionRunnerModel.ModelUnavailableError
+// "Model unavailable: omniroute/auto" — the live OmniRoute catalog carries
+// auto/best-free, auto/coding:free etc. but NO bare 'auto' id, so every
+// session pinned to it died on the first prompt. groq/llama-3.3-70b-versatile
+// is the same free, tool-call-clean model the chat route pins
+// (TOOL_CAPABLE_MODEL in chat.js) and is declared in opencode.jsonc.
+const OMNIROUTE_MODEL = { providerID: 'omniroute', id: 'groq/llama-3.3-70b-versatile' };
 
 async function ocFetch(path, opts = {}) {
   return fetch(`${config.opencodeUrl}${path}`, {
