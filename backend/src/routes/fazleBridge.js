@@ -92,7 +92,8 @@ router.get('/employees', (req, res) => {
   return readOnlyQuery(
     res,
     'SELECT employee_id, employee_name, designation, status FROM ai_read_employees WHERE status ILIKE $1 ORDER BY employee_name LIMIT 100',
-    [status]
+    [status],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 
@@ -113,13 +114,15 @@ router.get('/kb', (req, res) => {
     return readOnlyQuery(
       res,
       'SELECT id, key, category, subcategory, content_preview FROM ai_read_kb_articles WHERE LOWER(category) LIKE $1 LIMIT $2',
-      [`%${String(category).toLowerCase()}%`, limit]
+      [`%${String(category).toLowerCase()}%`, limit],
+      { isAdmin: req.user?.role === 'admin' }
     );
   }
   return readOnlyQuery(
     res,
     'SELECT id, key, category, subcategory, content_preview FROM ai_read_kb_articles LIMIT $1',
-    [limit]
+    [limit],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 
@@ -128,13 +131,16 @@ router.get('/attendance', (req, res) => {
   return readOnlyQuery(
     res,
     'SELECT employee_name, designation, attendance_date, status, location, remarks FROM ai_read_attendance_summary ORDER BY attendance_date DESC LIMIT $1',
-    [limit]
+    [limit],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 
 router.get('/billing-outstanding', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
-  return readOnlyQuery(res, 'SELECT * FROM ai_read_billing_outstanding LIMIT $1', [limit]);
+  return readOnlyQuery(res, 'SELECT * FROM ai_read_billing_outstanding LIMIT $1', [limit], {
+    isAdmin: req.user?.role === 'admin',
+  });
 });
 
 // ai_read_cash_transactions — fpe_cash_transactions ONLY, never
@@ -163,7 +169,8 @@ router.get('/cash-transactions', (req, res) => {
     `SELECT transaction_ref, transaction_date, amount, category, transaction_status,
             payout_method, employee_name, is_reversal
        FROM ai_read_cash_transactions ${where} LIMIT $${params.length}`,
-    params
+    params,
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 
@@ -179,13 +186,15 @@ router.get('/escort-programs', (req, res) => {
   );
 });
 
-router.get('/module-bridge-status', (_req, res) => {
+router.get('/module-bridge-status', (req, res) => {
   // ai_read_module_bridge_status has no "status" column — real columns are
   // service_name, last_seen, queue_depth, metadata (verified 2026-08-02,
   // same fix already applied in fazleTools.js's get_module_bridge_status).
   return readOnlyQuery(
     res,
-    'SELECT service_name, last_seen, queue_depth, metadata FROM ai_read_module_bridge_status LIMIT 20'
+    'SELECT service_name, last_seen, queue_depth, metadata FROM ai_read_module_bridge_status LIMIT 20',
+    [],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 
@@ -196,7 +205,8 @@ router.get('/payroll-runs', (req, res) => {
     `SELECT employee_name, designation, period_year, period_month, status,
             total_programs, gross_salary, net_salary, total_advances, total_deductions
        FROM ai_read_payroll_runs ORDER BY period_year DESC, period_month DESC LIMIT $1`,
-    [limit]
+    [limit],
+    { isAdmin: req.user?.role === 'admin' }
   );
 });
 

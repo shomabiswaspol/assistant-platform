@@ -116,6 +116,33 @@ describe('maskPiiInObject', () => {
   test('TEXT_SCAN_FIELDS includes message_body', () => {
     assert.ok(TEXT_SCAN_FIELDS.has('message_body'));
   });
+
+  test('Date values pass through unchanged for a non-admin caller (2026-08-10 fix)', () => {
+    // Regression: a Date has typeof 'object' but no own enumerable
+    // properties, so it used to fall into the generic object-recursion
+    // branch and come out as {} — corrupting every date field (incl. for
+    // hermes-mcp-svc, a non-admin caller) on every route that selects one.
+    const txnDate = new Date('2026-08-01T00:00:00Z');
+    const row = { transaction_ref: 'T1', transaction_date: txnDate, amount: 400 };
+    const result = maskPiiInObject(row, { isAdmin: false });
+    assert.ok(result.transaction_date instanceof Date, 'transaction_date must stay a Date, not become {}');
+    assert.equal(result.transaction_date.getTime(), txnDate.getTime());
+    assert.equal(result.amount, 400);
+  });
+
+  test('Date values inside an array of rows pass through unchanged', () => {
+    const rows = [{ last_seen: new Date('2026-08-10T00:00:00Z') }, { last_seen: new Date('2026-08-09T00:00:00Z') }];
+    const result = maskPiiInObject(rows, { isAdmin: false });
+    for (const r of result) assert.ok(r.last_seen instanceof Date);
+  });
+
+  test('PII_FIELDS is kept in sync with fazle-mcp/pii_mask.py (2026-08-10 fix)', () => {
+    // pii_mask.py's PII_FIELDS had target_id/canonical_phone that this set
+    // lacked, despite both files' headers saying to keep them identical.
+    for (const f of ['target_id', 'canonical_phone']) {
+      assert.ok(PII_FIELDS.has(f), `expected PII_FIELDS to include ${f} (parity with pii_mask.py)`);
+    }
+  });
 });
 
 describe('maskPhonesInText', () => {

@@ -8,8 +8,20 @@
 // Python counterpart (deliberately duplicated, not shared across the two
 // processes/languages): /home/azim/fazle-mcp/pii_mask.py — keep the
 // algorithm identical in both if either changes.
+//
+// 2026-08-10: PII_FIELDS drifted from pii_mask.py's copy for a while
+// (that file had target_id/canonical_phone, this one didn't) despite this
+// exact comment saying to keep them identical — now back in sync. Before
+// editing PII_FIELDS/TEXT_SCAN_FIELDS here, grep pii_mask.py's same two
+// sets and update both together.
 
-export const PII_FIELDS = new Set(['whatsapp_number', 'sender_number', 'escort_mobile', 'phone']);
+// 2026-08-10: kept in sync with pii_mask.py's PII_FIELDS — that file has
+// carried target_id/canonical_phone (social queue/flagged rows can carry a
+// phone number in target_id, per fazle-mcp/metrics_tools.py) since before
+// this comment; this set didn't, a real "kept identical" drift (dormant —
+// no Node route currently selects those columns, but fixed now so it can't
+// silently leak the moment one does).
+export const PII_FIELDS = new Set(['whatsapp_number', 'sender_number', 'escort_mobile', 'phone', 'target_id', 'canonical_phone']);
 
 // Fields that aren't themselves a phone number but are known free text a
 // sender can type a phone number into — found live 2026-08-04 checking
@@ -60,6 +72,15 @@ export function maskPhonesInText(text) {
 // numbers rather than fully masked.
 export function maskPiiInObject(value, { isAdmin = false, fields = PII_FIELDS, textFields = TEXT_SCAN_FIELDS } = {}) {
   if (isAdmin) return value;
+  // 2026-08-10 fix: a Date has typeof 'object' but no own enumerable
+  // properties, so it fell into the generic recursion below and came out
+  // as {} for every non-admin caller — including hermes-mcp-svc, the
+  // account fazle-mcp itself uses, so this was corrupting date fields
+  // (transaction_date, attendance_date, last_seen, etc.) on Hermes's own
+  // reads, not just a hypothetical non-admin human. pii_mask.py never had
+  // this gap (isinstance(dict)/isinstance(list) only, so a datetime.date
+  // already fell through unchanged) — this brings the JS side to parity.
+  if (value instanceof Date) return value;
   if (Array.isArray(value)) {
     return value.map((item) => maskPiiInObject(item, { isAdmin, fields, textFields }));
   }
