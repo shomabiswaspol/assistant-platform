@@ -22,6 +22,18 @@ export default function HermesPage() {
   const [modes, setModes] = useState(['READ', 'BUILD', 'RUN']);
   const [modeBusy, setModeBusy] = useState(false);
   const bottomRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // 2026-08-10: this page never got the auto-growing textarea from the
+  // 2026-08-09 chat redesign (ChatInputBar.jsx) — it was still a static
+  // rows={1} box. Same pattern/cap reused here for consistency.
+  const MAX_TEXTAREA_HEIGHT = 200;
+
+  function autoResize(e) {
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT) + 'px';
+  }
 
   useEffect(() => {
     api.hermesMessages()
@@ -67,6 +79,7 @@ export default function HermesPage() {
     setError('');
     setMessages((m) => [...m, { role: 'user', content: text }]);
     setSending(true);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     try {
       const res = await api.hermesSend(text, persona);
       setMessages((m) => [...m, { role: 'assistant', content: res.reply }]);
@@ -165,13 +178,15 @@ export default function HermesPage() {
       <div className="mx-auto w-full max-w-3xl p-3">
         <div className="flex items-end gap-2 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-2 focus-within:ring-2 focus-within:ring-brand-500/50">
           <textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { setInput(e.target.value); autoResize(e); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder="Instruct Hermes…"
             rows={1}
             disabled={sending}
-            className="flex-1 resize-none bg-transparent py-1.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
+            style={{ maxHeight: MAX_TEXTAREA_HEIGHT }}
+            className="flex-1 resize-none overflow-y-auto bg-transparent py-1.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
           />
           <button
             onClick={handleSend}
