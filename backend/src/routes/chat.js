@@ -173,6 +173,9 @@ const BYO_PROVIDER_BASE_URLS = {
   groq: 'https://api.groq.com/openai/v1',
   deepseek: 'https://api.deepseek.com',
   moonshot: 'https://api.moonshot.ai/v1',
+  minimax: 'https://api.minimax.chat/v1',
+  xai: 'https://api.x.ai/v1',
+  ollama: 'http://host.docker.internal:11434',
 };
 
 function inferProvider(model) {
@@ -229,9 +232,14 @@ async function callProviderDirect(provider, apiKey, messages, model) {
   const baseUrl = BYO_PROVIDER_BASE_URLS[provider];
   if (!baseUrl) return null;
 
+  const headers = { 'Content-Type': 'application/json' };
+  if (provider !== 'ollama') {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
   const resp = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ model: bareModel, messages, stream: false }),
     signal: AbortSignal.timeout(60000),
   });
@@ -359,19 +367,32 @@ async function sendTextMessage({ userId, sessionId, message, model, metadata, is
     // eslint-disable-next-line no-console
     console.warn('chat: all tool-enabled attempts failed, falling back without tools');
 
+    // Free local fallback: try Ollama directly before any BYO key.
+    // Ollama needs no user API key and runs on the host at
+    // host.docker.internal:11434 (OpenAI-compatible /v1/chat/completions).
+    try {
+      directResult = await callProviderDirect('ollama', '', messages, model);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('chat: local ollama fallback failed:', err.message);
+      directResult = null;
+    }
+
     // BYO key: only for this no-tools fallback, never for the tool-enabled
     // call above. If the user has their own key for the selected model's
     // provider, call that provider directly instead of OmniRoute.
-    const byoProvider = inferProvider(model);
-    if (byoProvider) {
-      const byoKey = await getUserApiKey(userId, byoProvider);
-      if (byoKey) {
-        try {
-          directResult = await callProviderDirect(byoProvider, byoKey, messages, model);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn(`chat: BYO direct call to ${byoProvider} failed, falling back to OmniRoute:`, err.message);
-          directResult = null;
+    if (!directResult) {
+      const byoProvider = inferProvider(model);
+      if (byoProvider) {
+        const byoKey = await getUserApiKey(userId, byoProvider);
+        if (byoKey) {
+          try {
+            directResult = await callProviderDirect(byoProvider, byoKey, messages, model);
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn(`chat: BYO direct call to ${byoProvider} failed, falling back to OmniRoute:`, err.message);
+            directResult = null;
+          }
         }
       }
     }
