@@ -80,6 +80,12 @@ export const api = {
   addApiKey: (payload) => request('/settings/api-keys', { method: 'POST', body: payload }),
   deleteApiKey: (id) => request(`/settings/api-keys/${id}`, { method: 'DELETE' }),
   omnirouteStatus: () => request('/settings/omniroute-status'),
+  // Hermes customer-dispatch Phase 1 (2026-08-12) — admin-only ON/OFF for
+  // the 4 hermes_customer_* feature flags, via backend/src/routes/fazleOps.js
+  // (a passthrough to fazle-core's own preflight_guard ops-flag endpoints).
+  hermesCustomerFlags: () => request('/fazle-ops/flags'),
+  activateHermesCustomerFlag: (name) => request(`/fazle-ops/activate/${name}`, { method: 'POST' }),
+  killSwitchHermesCustomerFlag: (name) => request(`/fazle-ops/kill-switch/${name}`, { method: 'POST' }),
 
   usageDaily: () => request('/usage/daily'),
   usageMonthly: () => request('/usage/monthly'),

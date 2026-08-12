@@ -12,6 +12,17 @@ const TIERS = [
   { key: 'priority_3_paid', label: 'Paid', color: 'border-yellow-300 dark:border-yellow-800' },
 ];
 
+// Hermes customer-dispatch Phase 1 (2026-08-12, Minimal Modification Plan
+// item 9). Labels match the categories the Minimal Modification Plan and
+// message_router's own tier comments use, not fazle-core's internal flag
+// names, so this reads the same way to an Admin who hasn't seen the code.
+const HERMES_CUSTOMER_CATEGORIES = [
+  { flag: 'hermes_customer_employee', label: 'Employee', hint: 'salary / payroll questions (message_router Tier 10)' },
+  { flag: 'hermes_customer_recruitment', label: 'Recruitment', hint: 'job applicant / candidate replies' },
+  { flag: 'hermes_customer_route_b', label: 'Route B / General chat', hint: 'escort, security guard, candidate, unknown-sender chit-chat' },
+  { flag: 'hermes_customer_general', label: 'General fallback', hint: 'company policy / unrecognized intent (Tier 15)' },
+];
+
 function maskKey(provider) {
   return `${provider}-••••••••`;
 }
@@ -22,6 +33,9 @@ export default function SettingsPage() {
   const [omni, setOmni] = useState(null);
   const [newKey, setNewKey] = useState({ provider: '', key: '', label: '' });
   const [showAddKey, setShowAddKey] = useState(false);
+  const [hermesFlags, setHermesFlags] = useState(null);
+  const [hermesFlagsError, setHermesFlagsError] = useState('');
+  const [hermesFlagBusy, setHermesFlagBusy] = useState('');
   // FIX 3: refresh() previously had no error handling — if any of the three
   // calls below failed (expired token, transient network issue), the page
   // would silently stay half-loaded with no indication why. Route/imports
@@ -39,9 +53,38 @@ export default function SettingsPage() {
     } catch (err) {
       setLoadError(err.message || 'Failed to load settings — please try refreshing the page.');
     }
+    // Kept separate from the block above: the fazle-ops bridge being
+    // unconfigured (fresh install, credential not yet provisioned) is the
+    // expected default state, not a page-load failure — it gets its own
+    // inline notice in the panel below, not the top-level loadError banner.
+    try {
+      setHermesFlagsError('');
+      const { flags } = await api.hermesCustomerFlags();
+      setHermesFlags(flags);
+    } catch (err) {
+      setHermesFlags(null);
+      setHermesFlagsError(err.message || 'Failed to load Hermes customer-reply status.');
+    }
   }
 
   useEffect(() => { refresh(); }, []);
+
+  async function toggleHermesFlag(flag, nextEnabled) {
+    setHermesFlagBusy(flag);
+    try {
+      if (nextEnabled) {
+        await api.activateHermesCustomerFlag(flag);
+      } else {
+        await api.killSwitchHermesCustomerFlag(flag);
+      }
+      const { flags } = await api.hermesCustomerFlags();
+      setHermesFlags(flags);
+    } catch (err) {
+      setHermesFlagsError(err.message || 'Failed to update the flag.');
+    } finally {
+      setHermesFlagBusy('');
+    }
+  }
 
   async function addKey(e) {
     e.preventDefault();
@@ -119,6 +162,56 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="WhatsApp Hermes Conversation"
+          subtitle="Let Hermes generate the AI reply for these customer categories, instead of the existing chain."
+        />
+        {hermesFlagsError && (
+          <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">
+            {hermesFlagsError.includes('not configured')
+              ? 'Not configured yet — set FAZLE_CORE_INTERNAL_API_KEY in the backend to enable this panel.'
+              : hermesFlagsError}
+          </p>
+        )}
+        {hermesFlags && (
+          <div className="flex flex-col gap-2">
+            {HERMES_CUSTOMER_CATEGORIES.map(({ flag, label, hint }) => {
+              const state = hermesFlags.find((f) => f.feature_name === flag);
+              const on = Boolean(state?.effective_enabled);
+              const busy = hermesFlagBusy === flag;
+              return (
+                <div key={flag} className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{label}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500">{hint}</p>
+                  </div>
+                  <Button
+                    variant={on ? 'danger' : 'secondary'}
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => toggleHermesFlag(flag, !on)}
+                  >
+                    {busy ? '…' : on ? 'ON — turn off' : 'OFF — turn on'}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/50 px-3 py-2">
+            <div>
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Accountant &amp; Escort Client</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Protected — Hermes never generates these replies, by design. Not controlled here.
+              </p>
+            </div>
+            <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Not applicable</span>
+          </div>
+        </div>
       </Card>
 
       <Card>

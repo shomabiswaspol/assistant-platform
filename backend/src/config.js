@@ -29,6 +29,25 @@ export const config = {
   // silently dropped by the kernel on this VPS).
   hermesRunnerUrl: process.env.HERMES_RUNNER_URL || 'http://172.25.0.1:80/hermes-internal',
   hermesRunnerSecret: process.env.HERMES_RUNNER_SECRET || '',
+  // Hermes customer-dispatch Phase 1 (2026-08-12, Minimal Modification
+  // Plan item 9) — a WRITE-capable call into fazle-core's own
+  // preflight_guard ops-flag endpoints (activate/kill-switch a named
+  // feature flag), deliberately kept OUT of fazleBridge.js: that file's
+  // whole design (see its own header comment) is a strict, 3-layer
+  // read-only Postgres bridge, and this is neither read-only nor
+  // Postgres. A separate route file (fazleOps.js) calls fazle-core's
+  // FastAPI directly instead. Empty fazleCoreInternalApiKey by default —
+  // fazleOps.js's routes return 503 "not configured" until an Owner
+  // explicitly provisions one (recommend a narrowly-scoped key minted
+  // for this purpose specifically, not fazle-mcp's existing
+  // FAZLE_CORE_API_KEY, so this panel's blast radius stays limited to
+  // flipping the 4 hermes_customer_* flags it's meant for — fazle-core's
+  // shared.auth_deps.require_api_key() accepts either the one global
+  // internal_api_key or any active admin's own API key, so a
+  // purpose-specific key would need to be an admin-tier API key rather
+  // than a second global internal key).
+  fazleCoreOpsUrl: process.env.FAZLE_CORE_OPS_URL || 'http://host.docker.internal:8200',
+  fazleCoreInternalApiKey: process.env.FAZLE_CORE_INTERNAL_API_KEY || '',
   fazleDb: {
     enabled: process.env.FAZLE_DB_ENABLED === 'true',
     host: process.env.FAZLE_DB_HOST || 'host.docker.internal',
