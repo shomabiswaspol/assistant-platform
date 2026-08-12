@@ -76,7 +76,6 @@ export default function HermesPage() {
     const text = input.trim();
     if (!text || sending) return;
     setInput('');
-    setError('');
     setMessages((m) => [...m, { role: 'user', content: text }]);
     setSending(true);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -84,6 +83,9 @@ export default function HermesPage() {
       const res = await api.hermesSend(text, persona);
       setMessages((m) => [...m, { role: 'assistant', content: res.reply }]);
       setPersonaLocked(true); // persona is set once per session, from the first message on
+      setError(''); // only clear a prior error once a new turn actually succeeds,
+      // so a failed turn's error stays visible instead of being silently wiped
+      // by the next send attempt (2026-08-10 silent-timeout fix)
     } catch (err) {
       setError(err.message || 'Hermes request failed');
     } finally {

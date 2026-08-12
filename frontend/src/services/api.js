@@ -1,5 +1,10 @@
 const BASE = '/api';
 
+// Slightly above nginx's outer /api/ proxy_read_timeout (220s) so a genuinely
+// dead connection eventually surfaces as a real, catchable error instead of
+// hanging the UI forever (2026-08-10 silent-timeout fix).
+const REQUEST_TIMEOUT_MS = 230000;
+
 function getToken() {
   return localStorage.getItem('token');
 }
@@ -14,6 +19,7 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `request failed (${res.status})`);

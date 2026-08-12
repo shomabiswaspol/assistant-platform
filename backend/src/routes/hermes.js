@@ -97,66 +97,81 @@ router.post('/send', async (req, res) => {
   const { message, persona } = req.body || {};
   if (!message) return res.status(400).json({ error: 'message required' });
 
-  await pool.query(
-    `INSERT INTO hermes_messages (user_id, role, content) VALUES ($1, 'user', $2)`,
-    [req.user.sub, message]
-  );
-
-  const { rows: stateRows } = await pool.query(
-    'SELECT hermes_session_id, persona FROM hermes_state WHERE user_id = $1',
-    [req.user.sub]
-  );
-  const hermesSessionId = stateRows[0]?.hermes_session_id || null;
-  // Persona is only settable when there's no existing session — once a
-  // session exists, its stored persona wins regardless of what's passed in,
-  // so it can't silently change mid-conversation.
-  const activePersona = hermesSessionId
-    ? stateRows[0]?.persona || DEFAULT_PERSONA
-    : PERSONA_KEYS.has(persona) ? persona : DEFAULT_PERSONA;
-
-  let upstream;
+  // Whole body wrapped in try/catch (2026-08-10 silent-timeout fix) —
+  // previously an unguarded pool.query here could throw an unhandled
+  // rejection (Node's default crashes the process) with zero log line
+  // anywhere. Matches the try/catch + console.error pattern chat.js's
+  // /send route already uses.
   try {
-    upstream = await fetch(`${config.hermesRunnerUrl}/run`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.hermesRunnerSecret}`,
-      },
-      body: JSON.stringify({ hermes_session_id: hermesSessionId, message, persona: activePersona }),
-      // Hermes agentic tool loops can run long — generous timeout, matches
-      // hermes-runner's own internal HERMES_RUN_TIMEOUT (170s) with a
-      // little headroom for the network hop itself.
-      signal: AbortSignal.timeout(180000),
-    });
-  } catch (err) {
-    return res.status(502).json({ error: 'Hermes runner unreachable', detail: String(err) });
-  }
-
-  const data = await upstream.json().catch(() => ({}));
-
-  // Persist whatever session id we got back even on failure — the runner
-  // may have created a new Hermes session before hitting an error partway
-  // through, and losing track of it would orphan the conversation. Only
-  // fires on session creation (id changed from null), which is exactly
-  // when the persona choice needs to be saved for the rest of the session.
-  if (data.hermes_session_id && data.hermes_session_id !== hermesSessionId) {
     await pool.query(
-      `INSERT INTO hermes_state (user_id, hermes_session_id, persona, updated_at) VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (user_id) DO UPDATE SET hermes_session_id = EXCLUDED.hermes_session_id, persona = EXCLUDED.persona, updated_at = NOW()`,
-      [req.user.sub, data.hermes_session_id, activePersona]
+      `INSERT INTO hermes_messages (user_id, role, content) VALUES ($1, 'user', $2)`,
+      [req.user.sub, message]
     );
+
+    const { rows: stateRows } = await pool.query(
+      'SELECT hermes_session_id, persona FROM hermes_state WHERE user_id = $1',
+      [req.user.sub]
+    );
+    const hermesSessionId = stateRows[0]?.hermes_session_id || null;
+    // Persona is only settable when there's no existing session — once a
+    // session exists, its stored persona wins regardless of what's passed in,
+    // so it can't silently change mid-conversation.
+    const activePersona = hermesSessionId
+      ? stateRows[0]?.persona || DEFAULT_PERSONA
+      : PERSONA_KEYS.has(persona) ? persona : DEFAULT_PERSONA;
+
+    let upstream;
+    try {
+      upstream = await fetch(`${config.hermesRunnerUrl}/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.hermesRunnerSecret}`,
+        },
+        body: JSON.stringify({ hermes_session_id: hermesSessionId, message, persona: activePersona }),
+        // Hermes agentic tool loops can run long — generous timeout, matches
+        // hermes-runner's own internal HERMES_RUN_TIMEOUT (170s) with a
+        // little headroom for the network hop itself.
+        signal: AbortSignal.timeout(180000),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('hermes send error (runner unreachable):', err);
+      return res.status(502).json({ error: 'Hermes runner unreachable', detail: String(err) });
+    }
+
+    const data = await upstream.json().catch(() => ({}));
+
+    // Persist whatever session id we got back even on failure — the runner
+    // may have created a new Hermes session before hitting an error partway
+    // through, and losing track of it would orphan the conversation. Only
+    // fires on session creation (id changed from null), which is exactly
+    // when the persona choice needs to be saved for the rest of the session.
+    if (data.hermes_session_id && data.hermes_session_id !== hermesSessionId) {
+      await pool.query(
+        `INSERT INTO hermes_state (user_id, hermes_session_id, persona, updated_at) VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET hermes_session_id = EXCLUDED.hermes_session_id, persona = EXCLUDED.persona, updated_at = NOW()`,
+        [req.user.sub, data.hermes_session_id, activePersona]
+      );
+    }
+
+    if (!upstream.ok) {
+      // eslint-disable-next-line no-console
+      console.error('hermes send error (runner returned error):', data.error);
+      return res.status(502).json({ error: data.error || 'Hermes runner error' });
+    }
+
+    await pool.query(
+      `INSERT INTO hermes_messages (user_id, role, content) VALUES ($1, 'assistant', $2)`,
+      [req.user.sub, data.reply]
+    );
+
+    res.json({ reply: data.reply, mode: data.mode });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('hermes send error:', err);
+    res.status(502).json({ error: 'Hermes send failed', detail: String(err) });
   }
-
-  if (!upstream.ok) {
-    return res.status(502).json({ error: data.error || 'Hermes runner error' });
-  }
-
-  await pool.query(
-    `INSERT INTO hermes_messages (user_id, role, content) VALUES ($1, 'assistant', $2)`,
-    [req.user.sub, data.reply]
-  );
-
-  res.json({ reply: data.reply, mode: data.mode });
 });
 
 router.post('/reset', async (req, res) => {

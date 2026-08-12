@@ -28,12 +28,19 @@ export function getFazleReaderPool() {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
       statement_timeout: config.fazleDb.statementTimeoutMs,
-    });
-    // Every new physical connection in the pool is forced read-only at the
-    // session level, in addition to the role's own SELECT-only grants and
-    // the query-text guard in fazleBridge.js — three independent layers.
-    fazleReaderPool.on('connect', (client) => {
-      client.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY').catch(() => {});
+      // Every new physical connection in the pool is forced read-only at the
+      // session level, in addition to the role's own SELECT-only grants and
+      // the query-text guard in fazleBridge.js — three independent layers.
+      // Uses onConnect (awaited internally by pg-pool, in _acquireClient,
+      // before the client is ever handed to a caller) rather than the
+      // 'connect' event — that event fires synchronously and hands the
+      // client off in the same tick, so an un-awaited query on it raced
+      // against whatever query the caller immediately issued on the same
+      // connection, firing pg's "client.query() when the client is already
+      // executing a query" deprecation warning (2026-08-10 fix).
+      async onConnect(client) {
+        await client.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY');
+      },
     });
   }
   return fazleReaderPool;
