@@ -21,6 +21,11 @@ const HERMES_CUSTOMER_CATEGORIES = [
   { flag: 'hermes_customer_recruitment', label: 'Recruitment', hint: 'job applicant / candidate replies' },
   { flag: 'hermes_customer_route_b', label: 'Route B / General chat', hint: 'escort, security guard, candidate, unknown-sender chit-chat' },
   { flag: 'hermes_customer_general', label: 'General fallback', hint: 'company policy / unrecognized intent (Tier 15)' },
+  // 2026-08-17 (Hermes-only-AI-architecture session, Owner-directed):
+  { flag: 'hermes_customer_kb_fallback', label: 'Knowledge Base fallback', hint: 'KB semantic/RAG fallback replies — was the one ungated Ollama call site' },
+  { flag: 'hermes_customer_social', label: 'Social (Messenger/FB)', hint: 'Messenger DMs + Facebook Page comments' },
+  { flag: 'hermes_admin_console', label: 'Admin AI Console', hint: 'WhatsApp "AI <question>" command + /chat/message Chat Lab' },
+  { flag: 'hermes_intent_classification', label: 'Intent classification', hint: 'WhatsApp message-intent labeling (routes to the right tier)' },
 ];
 
 function maskKey(provider) {
@@ -63,7 +68,7 @@ export default function SettingsPage() {
       setHermesFlags(flags);
     } catch (err) {
       setHermesFlags(null);
-      setHermesFlagsError(err.message || 'Failed to load Hermes customer-reply status.');
+      setHermesFlagsError(err.message || 'Failed to load Earth customer-reply status.');
     }
   }
 
@@ -166,8 +171,8 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader
-          title="WhatsApp Hermes Conversation"
-          subtitle="Let Hermes generate the AI reply for these customer categories, instead of the existing chain."
+          title="WhatsApp Earth Conversation"
+          subtitle="Let Earth generate the AI reply for these customer categories, instead of the existing chain."
         />
         {hermesFlagsError && (
           <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">
@@ -206,7 +211,7 @@ export default function SettingsPage() {
             <div>
               <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Accountant &amp; Escort Client</p>
               <p className="text-xs text-slate-400 dark:text-slate-500">
-                Protected — Hermes never generates these replies, by design. Not controlled here.
+                Protected — Earth never generates these replies, by design. Not controlled here.
               </p>
             </div>
             <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Not applicable</span>

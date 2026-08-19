@@ -19,7 +19,7 @@ import UserMenu from './UserMenu.jsx';
 // stay behind the same admin-only gate Hermes already has). Appended
 // conditionally in Sidebar() below, not part of what every user sees.
 const OPENCODE_ITEM = { to: '/opencode', label: 'OpenCode', icon: Code2 };
-const HERMES_ITEM = { to: '/hermes', label: 'Hermes', icon: Bot };
+const HERMES_ITEM = { to: '/hermes', label: 'Earth', icon: Bot };
 
 // UI redesign (2026-08-09): Usage/Settings/Profile/Admin used to live here
 // as a separate "Account"/"Admin" NavGroup — moved into UserMenu's popover
