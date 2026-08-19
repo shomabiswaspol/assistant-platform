@@ -25,7 +25,9 @@ const HERMES_CUSTOMER_CATEGORIES = [
   { flag: 'hermes_customer_kb_fallback', label: 'Knowledge Base fallback', hint: 'KB semantic/RAG fallback replies — was the one ungated Ollama call site' },
   { flag: 'hermes_customer_social', label: 'Social (Messenger/FB)', hint: 'Messenger DMs + Facebook Page comments' },
   { flag: 'hermes_admin_console', label: 'Admin AI Console', hint: 'WhatsApp "AI <question>" command + /chat/message Chat Lab' },
-  { flag: 'hermes_intent_classification', label: 'Intent classification', hint: 'WhatsApp message-intent labeling (routes to the right tier)' },
+  // 2026-08-19: hermes_intent_classification removed -- dependency audit found it
+  // was never wired to any code (app.llm.classify_intent_llm() never checked it),
+  // an unimplemented feature, not a working toggle. Deferred, not built here.
 ];
 
 function maskKey(provider) {
