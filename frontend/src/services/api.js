@@ -1,9 +1,14 @@
 const BASE = '/api';
 
-// Slightly above nginx's outer /api/ proxy_read_timeout (220s) so a genuinely
-// dead connection eventually surfaces as a real, catchable error instead of
-// hanging the UI forever (2026-08-10 silent-timeout fix).
-const REQUEST_TIMEOUT_MS = 230000;
+// Slightly above the largest nginx proxy_read_timeout any /api/ call might
+// hit, so a genuinely dead connection eventually surfaces as a real,
+// catchable error instead of hanging the UI forever (2026-08-10
+// silent-timeout fix). Raised 230000 -> 380000 on 2026-08-14 to stay above
+// the new /api/hermes/ location's 350s (up from the general /api/ block's
+// 220s, which is still fine for every other route) — see
+// HANDOFF_P2_TIMEOUT_FIX_2026-08-14.md and hermes-runner/server.py's
+// timeout-chain comment for the full chain this sits at the top of.
+const REQUEST_TIMEOUT_MS = 380000;
 
 function getToken() {
   return localStorage.getItem('token');
@@ -86,6 +91,26 @@ export const api = {
   hermesCustomerFlags: () => request('/fazle-ops/flags'),
   activateHermesCustomerFlag: (name) => request(`/fazle-ops/activate/${name}`, { method: 'POST' }),
   killSwitchHermesCustomerFlag: (name) => request(`/fazle-ops/kill-switch/${name}`, { method: 'POST' }),
+  // Operational visibility (2026-08-16) — same fazle-ops passthrough
+  // pattern as the 3 calls above, reusing the same /fazle-ops-internal/
+  // nginx location and modules/preflight_guard/routes.py's new
+  // ops_health_summary/ops_dlq_status endpoints (see that file's own
+  // comment for why these live in this specific namespace).
+  fazleOpsHealth: () => request('/fazle-ops/health'),
+  fazleOpsDlq: () => request('/fazle-ops/dlq'),
+
+  // Minimal Owner-facing Hermes Task/Approval panel (2026-08-20) — thin
+  // passthrough to fazle-core's modules.hermes_tasks routes via
+  // backend/src/routes/hermesTasks.js. Read-plus-approve/reject only;
+  // WhatsApp/chat remains the way tasks/authorizations actually get
+  // created, this panel never does that.
+  hermesTasks: (status) => request(`/hermes-tasks/tasks${status ? `?status=${status}` : ''}`),
+  hermesTask: (id) => request(`/hermes-tasks/tasks/${id}`),
+  hermesPendingActions: (taskId) =>
+    request(`/hermes-tasks/actions?status=pending${taskId ? `&task_id=${taskId}` : ''}`),
+  hermesApproveAction: (id) => request(`/hermes-tasks/actions/${id}/approve`, { method: 'POST' }),
+  hermesRejectAction: (id, reason) =>
+    request(`/hermes-tasks/actions/${id}/reject`, { method: 'POST', body: { reason } }),
 
   usageDaily: () => request('/usage/daily'),
   usageMonthly: () => request('/usage/monthly'),

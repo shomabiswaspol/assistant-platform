@@ -46,8 +46,25 @@ export const config = {
   // internal_api_key or any active admin's own API key, so a
   // purpose-specific key would need to be an admin-tier API key rather
   // than a second global internal key).
-  fazleCoreOpsUrl: process.env.FAZLE_CORE_OPS_URL || 'http://host.docker.internal:8200',
+  // 2026-08-12 fix: fazle-core.service binds 127.0.0.1:8200 only,
+  // unreachable from this container via host.docker.internal (confirmed
+  // by a direct connection test that timed out). Routed instead through
+  // the same nginx allow/deny-scoped internal-only pattern this file
+  // already uses for hermesRunnerUrl above (172.25.0.1:80, this
+  // container's own Docker network gateway) — see
+  // assistant-platform/nginx/assistant.iamazim.com.conf's
+  // "/fazle-ops-internal/" location block, which proxies to fazle-core's
+  // /api/assistant/ops/ and is restricted to this host's own Docker
+  // networks (172.25.0.0/16, 172.20.0.0/16), never the public internet.
+  fazleCoreOpsUrl: process.env.FAZLE_CORE_OPS_URL || 'http://172.25.0.1:80/fazle-ops-internal',
   fazleCoreInternalApiKey: process.env.FAZLE_CORE_INTERNAL_API_KEY || '',
+  // 2026-08-20: same pattern as fazleCoreOpsUrl above, a separate nginx
+  // location (/hermes-tasks-internal/) proxying to fazle-core's
+  // modules.hermes_tasks routes (/api/tasks, /api/actions) for the
+  // minimal Owner-facing task/approval panel — see
+  // backend/src/routes/hermesTasks.js. Reuses fazleCoreInternalApiKey
+  // (same X-Internal-Key fazle-core already trusts for the ops panel).
+  fazleCoreTasksUrl: process.env.FAZLE_CORE_TASKS_URL || 'http://172.25.0.1:80/hermes-tasks-internal',
   fazleDb: {
     enabled: process.env.FAZLE_DB_ENABLED === 'true',
     host: process.env.FAZLE_DB_HOST || 'host.docker.internal',

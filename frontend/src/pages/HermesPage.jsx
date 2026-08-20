@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Bot, Send, Loader2, RotateCcw } from 'lucide-react';
 import { api } from '../services/api.js';
 import MessageBubble from '../components/chat/MessageBubble.jsx';
+import HermesTaskPanel from '../components/hermes/HermesTaskPanel.jsx';
 
 // Admin-only full-capability agent — see backend/src/routes/hermes.js and
 // /home/azim/hermes-runner/server.py. v1: one continuous conversation, no
@@ -179,6 +180,8 @@ export default function HermesPage() {
           </button>
         </div>
       </div>
+
+      <HermesTaskPanel />
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-4">
